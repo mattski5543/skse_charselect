@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "charselect",
+  "version-semver": "0.0.1",
+  "dependencies": [
+    "catch2",
+    "directxtk",
+    "nlohmann-json",
+    "rapidcsv",
+    "spdlog"
+  ]
+}
