@@ -9,6 +9,7 @@
 #include "Paths.h"
 #include "Poses.h"
 #include "SelectMenu.h"
+#include "SkinAudit.h"
 #include "Tint.h"
 #include "Util.h"
 #include "core/Encoding.h"
@@ -1230,6 +1231,12 @@ namespace charselect::lobby
 				if (generation == g_enterGeneration && g_state == State::kActive) {
 					ReportSlots("5s after staging");
 					poses::Report("5s after staging");
+				}
+			});
+			skinaudit::Checkpoint("lobby staging");
+			RunAfter(std::chrono::seconds(10), [generation]() {
+				if (generation == g_enterGeneration && g_state == State::kActive) {
+					skinaudit::Checkpoint("10s after staging", true);
 				}
 			});
 		}

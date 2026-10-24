@@ -6,6 +6,7 @@
 #include "Lobby.h"
 #include "Poses.h"
 #include "SelectMenu.h"
+#include "SkinAudit.h"
 #include "Util.h"
 
 namespace charselect::frontend
@@ -233,6 +234,7 @@ namespace charselect::frontend
 	void OnMainMenuOpened()
 	{
 		g_atMainMenu = true;
+		skinaudit::Checkpoint("main menu");  // the first time: the baseline
 		lobby::OnMainMenuOpened();
 		sidecar::OnMainMenuOpened();
 		if (std::exchange(g_covered, false) && WillReplace()) {

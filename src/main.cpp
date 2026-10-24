@@ -9,6 +9,7 @@
 #include "Paths.h"
 #include "SaveIndex.h"
 #include "Sidecar.h"
+#include "SkinAudit.h"
 #include "Util.h"
 #include "core/Encoding.h"
 
@@ -89,6 +90,7 @@ namespace
 		case M::kPreLoadGame:
 			logger::info("SKSE message: {} (save='{}')", MessageName(a_msg->type), SaveNameFrom(a_msg));
 			charselect::sidecar::OnPreLoadGame(SaveNameFrom(a_msg));
+			charselect::skinaudit::Checkpoint("before load");
 			charselect::lobby::OnPreLoadGame();
 			break;
 		case M::kNewGame:
@@ -113,6 +115,13 @@ namespace
 				logger::info("SKSE message: {} (success={})", MessageName(a_msg->type), success);
 				charselect::lobby::OnPostLoadGame(success);
 				charselect::sidecar::OnPostLoadGame(success);  // after the lobby has gone idle
+				// Missing-hands diagnostics, for the first few loads of a launch.
+				static int audited = 0;
+				if (success && audited++ < 3) {
+					charselect::skinaudit::Checkpoint("after load", true);
+					charselect::skinaudit::CheckpointAfter(std::chrono::seconds(15), "15s after load", true);
+					charselect::skinaudit::CheckpointAfter(std::chrono::seconds(60), "60s after load", true);
+				}
 			}
 			break;
 		case M::kDataLoaded:
