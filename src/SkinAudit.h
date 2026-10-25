@@ -17,4 +17,9 @@ namespace charselect::skinaudit
 
 	// The same after a delay, on the main thread.
 	void CheckpointAfter(std::chrono::seconds a_delay, std::string a_when, bool a_men = false);
+
+	// For the next 15 minutes, logs each loaded man wearing one of a skin
+	// mod's runtime-filled skins or a skin with no addons, or whose hands
+	// have no 3D: the men who should show no hands. Restarts on each call.
+	void StartWatch();
 }

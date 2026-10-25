@@ -121,6 +121,7 @@ namespace
 					charselect::skinaudit::Checkpoint("after load", true);
 					charselect::skinaudit::CheckpointAfter(std::chrono::seconds(15), "15s after load", true);
 					charselect::skinaudit::CheckpointAfter(std::chrono::seconds(60), "60s after load", true);
+					charselect::skinaudit::StartWatch();
 				}
 			}
 			break;

@@ -216,6 +216,60 @@ namespace charselect::skinaudit
 			logger::info("SkinAudit:   {} loaded men", (std::min)(listed, kMaxListed * 2));
 		}
 
+		// The watch after a load: every loaded man whose skin is one of a skin
+		// mod's own (filled at runtime) or has no addons at all, or whose
+		// hands have no 3D, logged once per change, so the log names who should
+		// be missing hands. Reads only loaded actors' current forms.
+		constexpr auto kWatchInterval = std::chrono::seconds(20);
+		constexpr int  kWatchTicks = 45;  // 15 minutes after each load
+		std::uint32_t  g_watchGeneration{ 0 };
+		std::unordered_map<RE::FormID, std::string> g_watched;  // actor ref -> last line logged
+
+		bool IsRuntimeSkin(const RE::TESObjectARMO* a_skin)
+		{
+			const auto owner = OwningPlugin(a_skin);
+			return owner && owner->file->GetFilename() == "SkinMod.esp"sv;
+		}
+
+		std::string Worn(const RE::BIPOBJECT& a_object)
+		{
+			return std::format("item {} addon {} 3D {}", a_object.item ? Describe(a_object.item) : "none",
+				a_object.addon ? Describe(a_object.addon) : "none", a_object.partClone ? "yes" : "NO");
+		}
+
+		void WatchMen(std::uint32_t a_generation, int a_tick)
+		{
+			if (a_generation != g_watchGeneration || a_tick >= kWatchTicks) {
+				return;
+			}
+			if (auto* lists = RE::ProcessLists::GetSingleton()) {
+				for (const auto& handle : lists->highActorHandles) {
+					const auto actor = handle.get();
+					if (!actor || !actor->Is3DLoaded()) {
+						continue;
+					}
+					const auto* base = actor->GetActorBase();
+					const auto* skin = actor->GetSkin();
+					const auto& biped = actor->GetBiped(false);
+					if (!base || base->IsFemale() || !skin || !biped) {
+						continue;
+					}
+					const auto& hands = biped->objects[RE::BIPED_OBJECTS::kHands];
+					if (!IsRuntimeSkin(skin) && !skin->armorAddons.empty() && hands.partClone) {
+						continue;
+					}
+					auto line = std::format("man '{}' ref {:08X} base {} skin {} with {} addons; hands: {}", ActorName(base), actor->GetFormID(),
+						Describe(base), Describe(skin), skin->armorAddons.size(), Worn(hands));
+					auto& last = g_watched[actor->GetFormID()];
+					if (last != line) {
+						logger::info("SkinAudit: watch: {}", line);
+						last = std::move(line);
+					}
+				}
+			}
+			RunAfter(kWatchInterval, [a_generation, a_tick]() { WatchMen(a_generation, a_tick + 1); });
+		}
+
 		void Report(const Snapshot& a_now, std::string_view a_when)
 		{
 			const auto& was = *g_baseline;
@@ -322,5 +376,13 @@ namespace charselect::skinaudit
 	void CheckpointAfter(std::chrono::seconds a_delay, std::string a_when, bool a_men)
 	{
 		RunAfter(a_delay, [when = std::move(a_when), a_men]() { Checkpoint(when, a_men); });
+	}
+
+	void StartWatch()
+	{
+		const auto generation = ++g_watchGeneration;
+		g_watched.clear();
+		logger::info("SkinAudit: watching loaded men for {} min", kWatchTicks * kWatchInterval.count() / 60);
+		WatchMen(generation, 0);
 	}
 }
