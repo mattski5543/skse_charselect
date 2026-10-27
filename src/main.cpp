@@ -7,6 +7,7 @@
 #include "SelectMenu.h"
 #include "Lobby.h"
 #include "Paths.h"
+#include "ResetGuard.h"
 #include "SaveIndex.h"
 #include "Sidecar.h"
 #include "SkinAudit.h"
@@ -90,11 +91,15 @@ namespace
 		case M::kPreLoadGame:
 			logger::info("SKSE message: {} (save='{}')", MessageName(a_msg->type), SaveNameFrom(a_msg));
 			charselect::sidecar::OnPreLoadGame(SaveNameFrom(a_msg));
+			if (charselect::lobby::GetState() != charselect::lobby::State::kIdle) {
+				charselect::resetguard::Capture("load");
+			}
 			charselect::skinaudit::Checkpoint("before load");
 			charselect::lobby::OnPreLoadGame();
 			break;
 		case M::kNewGame:
 			logger::info("SKSE message: {}", MessageName(a_msg->type));
+			charselect::resetguard::Restore("new game", true);
 			charselect::lobby::OnNewGame();
 			break;
 		case M::kSaveGame:
@@ -113,6 +118,8 @@ namespace
 				// For PostLoadGame SKSE stores the success flag in the pointer value itself.
 				const bool success = a_msg->data != nullptr;
 				logger::info("SKSE message: {} (success={})", MessageName(a_msg->type), success);
+				// Before that skin mod redraws NPCs with the reverted skins.
+				charselect::resetguard::Restore(success ? "load" : "failed load", success);
 				charselect::lobby::OnPostLoadGame(success);
 				charselect::sidecar::OnPostLoadGame(success);  // after the lobby has gone idle
 				// Missing-hands diagnostics, for the first few loads of a launch.

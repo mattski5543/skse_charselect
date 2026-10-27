@@ -60,6 +60,24 @@ Where characters stand, and the camera, come from the layout for each location (
 
 Yes, in our testing. CharSelect never writes or changes a save, and saving is switched off while the select screen is up. We compared the same save loaded with and without CharSelect on a load order of about 1,000 plugins, and nothing from the select screen ended up in it. The details, and the limits of that test, are in [docs/SAVE_SAFETY.md](docs/SAVE_SAFETY.md).
 
+## Compatibility
+
+The select screen is a short game of its own, started in the background before your save loads, and your other mods run in it as usual. Most never notice. The part that matters is leaving it: when the select screen's game ends, Skyrim resets some records to how they are in their plugin files. A normal load in your own game doesn't do that; it happens whenever you leave a game started with the console's `coc` command at the main menu, which is how the select screen starts. A mod that changes records while the game runs, once per session, can lose those changes.
+
+CharSelect handles this itself. Just before the select screen's game ends, it notes what's there, and once your save has loaded it puts back what the reset took away:
+
+- parts missing from armors and skins, such as the hands of a body skin;
+- skins missing from characters and races.
+
+It only adds back what went missing. It never replaces or removes anything a mod has changed since, and it doesn't run when you load from within your own game. It also writes to `CharSelect.log` anything else that changed across the switch (keywords, spells, perks, factions, outfits), so new cases can be found.
+
+| Mod | What happened | Status |
+|---|---|---|
+| A skin mod | Men lost their hands after the select screen: it fills its own skins the first time it meets each body skin, and the reset emptied them. | Handled since 0.9.3 |
+| Skins handed out at startup (SPID, other skin distributors, Exquisite NPCs) | Some characters lost their skin for the session. | Handled since 0.9.3 |
+
+If something looks wrong only after using the select screen, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`.
+
 ## Known limitations
 
 - **The Enter button doesn't warn about missing mods.** The game's usual "missing content" warning only appears through **Load**. If you've removed mods since you last played a character, load them with **Load** instead.

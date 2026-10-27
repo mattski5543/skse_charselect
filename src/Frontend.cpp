@@ -6,6 +6,7 @@
 #include "Lobby.h"
 #include "Poses.h"
 #include "SelectMenu.h"
+#include "ResetGuard.h"
 #include "SkinAudit.h"
 #include "Util.h"
 
@@ -234,6 +235,7 @@ namespace charselect::frontend
 	void OnMainMenuOpened()
 	{
 		g_atMainMenu = true;
+		resetguard::Restore("main menu", false);
 		skinaudit::Checkpoint("main menu");  // the first time: the baseline
 		lobby::OnMainMenuOpened();
 		sidecar::OnMainMenuOpened();
@@ -326,6 +328,7 @@ namespace charselect::frontend
 				logger::error("Frontend: no Main singleton");
 				return;
 			}
+			resetguard::Capture("main menu");
 			main->GetRuntimeData().resetGame = true;
 			RunAfter(std::chrono::seconds(8), []() {
 				if (!g_atMainMenu) {
