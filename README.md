@@ -67,14 +67,16 @@ The select screen is a short game of its own, started in the background before y
 CharSelect handles this itself. Just before the select screen's game ends, it notes what's there, and once your save has loaded it puts back what the reset took away:
 
 - parts missing from armors and skins, such as the hands of a body skin;
-- skins missing from characters and races.
+- skins missing from characters and races;
+- spells, perks, keywords, head parts and hair colour missing from characters, and keywords missing from races, armor and weapons.
 
-It only adds back what went missing. It never replaces or removes anything a mod has changed since, and it doesn't run when you load from within your own game. It also writes to `CharSelect.log` anything else that changed across the switch (keywords, spells, perks, factions, outfits), so new cases can be found.
+It only adds back what went missing. It never replaces or removes anything a mod has changed since, and it doesn't run when you load from within your own game. It also writes to `CharSelect.log` anything else that changed across the switch (factions, AI packages, inventories, outfits, looks, texture records), so new cases can be found.
 
 | Mod | What happened | Status |
 |---|---|---|
 | A skin mod | Men lost their hands after the select screen: it fills its own skins the first time it meets each body skin, and the reset emptied them. | Handled since 0.9.3 |
 | Skins handed out at startup (SPID, other skin distributors, Exquisite NPCs) | Some characters lost their skin for the session. | Handled since 0.9.3 |
+| Characters in the select screen's location (seen with the Bannered Mare's Mikael, Uthgerd and Housecarls Pre-Thaneship's Lydia) | Their records came back emptied: no spells, perks or keywords, and Lydia had no hair colour, so her hair rendered pink and a script reading it (OBody) crashed the game. | Handled since 0.9.4 |
 
 If something looks wrong only after using the select screen, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`.
 
