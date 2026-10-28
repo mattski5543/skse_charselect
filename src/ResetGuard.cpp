@@ -63,6 +63,13 @@ namespace charselect::resetguard
 			std::vector<RE::TESNPC::Layer>                 tints;
 			std::optional<RE::TESNPC::FaceData>            faceData;
 			bool                                           hadHead{ false };
+			// The record's own blocks as they were, compared by address only:
+			// an emptied record can be left pointing at freed ones.
+			const void*                                    headBlock{ nullptr };
+			const void*                                    faceBlock{ nullptr };
+			const void*                                    tintBlock{ nullptr };
+			const void*                                    hairRaw{ nullptr };  // whatever it was, plugin record or not
+			const void*                                    faceDetailsRaw{ nullptr };
 		};
 
 		// Compared across the switch and logged, never written back.
@@ -264,6 +271,13 @@ namespace charselect::resetguard
 				st.faceDetails = PluginOrNull(head->faceDetails);
 			}
 			st.hadHead = a_npc->headRelatedData != nullptr;
+			st.headBlock = a_npc->headRelatedData;
+			st.faceBlock = a_npc->faceData;
+			st.tintBlock = a_npc->tintLayers;
+			if (const auto* head = a_npc->headRelatedData) {
+				st.hairRaw = head->hairColor;
+				st.faceDetailsRaw = head->faceDetails;
+			}
 			st.faceNPC = PluginOrNull(a_npc->faceNPC);
 			st.height = a_npc->height;
 			st.weight = a_npc->weight;
@@ -430,9 +444,14 @@ namespace charselect::resetguard
 			const auto  spellsNow = d ? d->numSpells + d->numlevSpells + d->numShouts : 0;
 			const bool  listsGone = a_st.spells.size() + a_st.levSpells.size() + a_st.shouts.size() + a_st.perks.size() > 0 && spellsNow == 0 &&
 			                       npc->perkCount == 0;
-			const bool tintsGone = !a_st.tints.empty() && (!npc->tintLayers || npc->tintLayers->empty());
-			const bool headGone = a_st.hadHead && !npc->headRelatedData;
-			const bool faceGone = a_st.faceData && !npc->faceData;
+			// A block that moved, went, or changed under the same address (Lydia's
+			// head data: freed, still pointed at, her hair color read as garbage).
+			const bool tintsGone = !a_st.tints.empty() &&
+			                       (!npc->tintLayers || npc->tintLayers != a_st.tintBlock || npc->tintLayers->empty());
+			const bool headGone = a_st.hadHead && (!npc->headRelatedData || npc->headRelatedData != a_st.headBlock ||
+			                                          npc->headRelatedData->hairColor != a_st.hairRaw ||
+			                                          npc->headRelatedData->faceDetails != a_st.faceDetailsRaw);
+			const bool faceGone = a_st.faceData && (!npc->faceData || npc->faceData != a_st.faceBlock);
 			return listsGone || tintsGone || headGone || faceGone;
 		}
 
@@ -499,11 +518,24 @@ namespace charselect::resetguard
 			if (items) {
 				what.push_back(std::format("{} inventory entries", items));
 			}
+			// An emptied record's blocks may already be freed, so they're never
+			// written into: each gets a fresh copy and the old one is left alone.
+			if (a_st.hadHead) {
+				auto* head = RE::calloc<RE::TESNPC::HeadRelatedData>(1);
+				head->hairColor = a_st.hairColor;
+				head->faceDetails = a_st.faceDetails;
+				npc->headRelatedData = head;
+				what.emplace_back("hair color and face details");
+			}
+			if (!a_st.headParts.empty()) {
+				auto* parts = RE::calloc<RE::BGSHeadPart*>(a_st.headParts.size());
+				std::ranges::copy(a_st.headParts, parts);
+				npc->headParts = parts;
+				npc->numHeadParts = static_cast<std::int8_t>(a_st.headParts.size());
+				what.push_back(std::format("{} head parts", a_st.headParts.size()));
+			}
 			if (!a_st.tints.empty()) {
-				if (!npc->tintLayers) {
-					npc->tintLayers = std::construct_at(RE::calloc<RE::BSTArray<RE::TESNPC::Layer*>>(1));
-				}
-				npc->tintLayers->clear();  // any regenerated defaults are left unreferenced
+				npc->tintLayers = std::construct_at(RE::calloc<RE::BSTArray<RE::TESNPC::Layer*>>(1));
 				for (const auto& layer : a_st.tints) {
 					auto* copy = RE::calloc<RE::TESNPC::Layer>(1);
 					*copy = layer;
@@ -512,12 +544,12 @@ namespace charselect::resetguard
 				what.push_back(std::format("{} skin tints", a_st.tints.size()));
 			}
 			if (a_st.faceData) {
-				if (!npc->faceData) {
-					npc->faceData = RE::calloc<RE::TESNPC::FaceData>(1);
-				}
-				*npc->faceData = *a_st.faceData;
+				auto* face = RE::calloc<RE::TESNPC::FaceData>(1);
+				*face = *a_st.faceData;
+				npc->faceData = face;
 				what.emplace_back("face shape");
 			}
+			logger::info("ResetGuard:   emptied record {}: put back {}", Describe(npc), what.empty() ? "nothing else" : Join(what));
 			a_fixes.Add("emptied NPC records", std::format("{} ({})", Describe(npc), what.empty() ? "nothing else differed" : Join(what)));
 		}
 
@@ -566,7 +598,7 @@ namespace charselect::resetguard
 				}
 
 				const auto partsNow = npc->numHeadParts > 0 ? static_cast<std::size_t>(npc->numHeadParts) : 0;
-				if (const auto missing = Missing(npc->headParts, partsNow, st.headParts); !missing.empty()) {
+				if (const auto missing = emptied ? std::vector<RE::BGSHeadPart*>{} : Missing(npc->headParts, partsNow, st.headParts); !missing.empty()) {
 					auto* parts = RE::calloc<RE::BGSHeadPart*>(st.headParts.size());
 					std::ranges::copy(st.headParts, parts);
 					npc->headParts = parts;  // the old, shorter array is left as it is
@@ -576,7 +608,7 @@ namespace charselect::resetguard
 
 				// Hair color and face details went with the rest of the record:
 				// Papyrus GetHairColor crashed on the emptied one (pink hair).
-				if (st.hairColor || st.faceDetails) {
+				if (!emptied && (st.hairColor || st.faceDetails)) {
 					auto* head = npc->headRelatedData;
 					const bool hair = st.hairColor && !(head && head->hairColor);
 					const bool face = st.faceDetails && !(head && head->faceDetails);
