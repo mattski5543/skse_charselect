@@ -10,10 +10,12 @@
 // distributors gave NPCs came back empty too.
 //
 // Capture() records what's there just before the lobby's game ends; Restore()
-// puts back what the revert took, conservatively: armor addons that went
-// missing (never replacing or dropping any), and NPC and race skins that went
-// empty. Plugin records only. It also logs what else changed across the
-// switch (keywords, spells, perks, factions, outfits) without touching it.
+// puts back what the revert took, conservatively: list entries that went
+// missing (armor addons, keywords, NPC spells, perks, head parts; never
+// replacing or dropping any) and fields that went empty (skins, hair color).
+// NPC records the revert reset to blank defaults (the characters standing in
+// the lobby) get every captured field back. Plugin records only. Other
+// changes across the switch are logged, not touched.
 
 namespace charselect::resetguard
 {

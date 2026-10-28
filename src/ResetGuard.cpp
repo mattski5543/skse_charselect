@@ -3,7 +3,6 @@
 #include "ResetGuard.h"
 
 #include "Util.h"
-#include "WriteWatch.h"
 #include "core/Encoding.h"
 
 namespace charselect::resetguard
@@ -46,6 +45,24 @@ namespace charselect::resetguard
 			std::vector<RE::BGSHeadPart*>                  headParts;
 			RE::BGSColorForm*                              hairColor{ nullptr };    // null if not a plugin record
 			RE::BGSTextureSet*                             faceDetails{ nullptr };
+
+			// The rest of the record, put back only if it came back emptied
+			// (see Emptied). Values, not the record's own heap blocks: those are
+			// freed when the record is emptied.
+			RE::TESNPC*                                    faceNPC{ nullptr };
+			float                                          height{ 1.0f };
+			float                                          weight{ 0.0f };
+			RE::TESClass*                                  npcClass{ nullptr };
+			RE::TESCombatStyle*                            combatStyle{ nullptr };
+			RE::BGSVoiceType*                              voiceType{ nullptr };
+			RE::BGSOutfit*                                 defaultOutfit{ nullptr };
+			RE::BGSOutfit*                                 sleepOutfit{ nullptr };
+			std::vector<std::pair<RE::TESFaction*, std::int8_t>> factions;
+			std::vector<RE::TESPackage*>                   packages;
+			std::vector<std::pair<RE::TESBoundObject*, std::int32_t>> items;
+			std::vector<RE::TESNPC::Layer>                 tints;
+			std::optional<RE::TESNPC::FaceData>            faceData;
+			bool                                           hadHead{ false };
 		};
 
 		// Compared across the switch and logged, never written back.
@@ -99,6 +116,12 @@ namespace charselect::resetguard
 		bool IsPluginForm(const RE::TESForm* a_form)
 		{
 			return a_form && !a_form->IsDynamicForm();
+		}
+
+		template <class T>
+		T* PluginOrNull(T* a_form)
+		{
+			return IsPluginForm(a_form) ? a_form : nullptr;
 		}
 
 		// The plugin records in a game array, in order (runtime ones dropped).
@@ -237,8 +260,42 @@ namespace charselect::resetguard
 			}
 			st.headParts = PluginForms(a_npc->headParts, a_npc->numHeadParts > 0 ? static_cast<std::size_t>(a_npc->numHeadParts) : 0);
 			if (const auto* head = a_npc->headRelatedData) {
-				st.hairColor = IsPluginForm(head->hairColor) ? head->hairColor : nullptr;
-				st.faceDetails = IsPluginForm(head->faceDetails) ? head->faceDetails : nullptr;
+				st.hairColor = PluginOrNull(head->hairColor);
+				st.faceDetails = PluginOrNull(head->faceDetails);
+			}
+			st.hadHead = a_npc->headRelatedData != nullptr;
+			st.faceNPC = PluginOrNull(a_npc->faceNPC);
+			st.height = a_npc->height;
+			st.weight = a_npc->weight;
+			st.npcClass = PluginOrNull(a_npc->npcClass);
+			st.combatStyle = PluginOrNull(a_npc->combatStyle);
+			st.voiceType = PluginOrNull(a_npc->voiceType);
+			st.defaultOutfit = PluginOrNull(a_npc->defaultOutfit);
+			st.sleepOutfit = PluginOrNull(a_npc->sleepOutfit);
+			for (const auto& f : a_npc->factions) {
+				if (IsPluginForm(f.faction)) {
+					st.factions.emplace_back(f.faction, f.rank);
+				}
+			}
+			for (auto* package : a_npc->aiPackages.packages) {
+				if (IsPluginForm(package)) {
+					st.packages.push_back(package);
+				}
+			}
+			for (std::uint32_t i = 0; a_npc->containerObjects && i < a_npc->numContainerObjects; ++i) {
+				if (const auto* entry = a_npc->containerObjects[i]; entry && IsPluginForm(entry->obj)) {
+					st.items.emplace_back(entry->obj, entry->count);
+				}
+			}
+			if (a_npc->tintLayers) {
+				for (const auto* layer : *a_npc->tintLayers) {
+					if (layer) {
+						st.tints.push_back(*layer);
+					}
+				}
+			}
+			if (a_npc->faceData) {
+				st.faceData = *a_npc->faceData;
 			}
 			a_s.npcs.emplace(a_id, std::move(st));
 			a_s.counts.emplace(a_id, std::pair{ a_npc, CountsOf(a_npc) });
@@ -360,11 +417,117 @@ namespace charselect::resetguard
 			}
 		}
 
-		// Spells, perks and head parts of NPCs whose record the revert emptied.
+		// The revert resets some NPC records to blank defaults instead of
+		// reloading them: spells and perks gone, or tints, face shape or head
+		// data gone. Not the player's: the save sets that one up.
+		bool Emptied(const NpcState& a_st)
+		{
+			const auto* npc = a_st.npc;
+			if (npc->GetFormID() == 0x7) {
+				return false;
+			}
+			const auto* d = npc->actorEffects;
+			const auto  spellsNow = d ? d->numSpells + d->numlevSpells + d->numShouts : 0;
+			const bool  listsGone = a_st.spells.size() + a_st.levSpells.size() + a_st.shouts.size() + a_st.perks.size() > 0 && spellsNow == 0 &&
+			                       npc->perkCount == 0;
+			const bool tintsGone = !a_st.tints.empty() && (!npc->tintLayers || npc->tintLayers->empty());
+			const bool headGone = a_st.hadHead && !npc->headRelatedData;
+			const bool faceGone = a_st.faceData && !npc->faceData;
+			return listsGone || tintsGone || headGone || faceGone;
+		}
+
+		// Everything else of an emptied record, from the values captured.
+		void RestoreEmptied(const NpcState& a_st, Fixes& a_fixes)
+		{
+			auto*                    npc = a_st.npc;
+			std::vector<std::string> what;
+			auto set = [&](auto& a_field, auto a_value, std::string_view a_name) {
+				if (a_field != a_value) {
+					a_field = a_value;
+					what.emplace_back(a_name);
+				}
+			};
+			set(npc->faceNPC, a_st.faceNPC, "face template");
+			set(npc->height, a_st.height, "height");
+			set(npc->weight, a_st.weight, "weight");
+			if (a_st.npcClass) {
+				set(npc->npcClass, a_st.npcClass, "class");
+			}
+			if (a_st.combatStyle) {
+				set(npc->combatStyle, a_st.combatStyle, "combat style");
+			}
+			if (a_st.voiceType) {
+				set(npc->voiceType, a_st.voiceType, "voice");
+			}
+			if (a_st.defaultOutfit) {
+				set(npc->defaultOutfit, a_st.defaultOutfit, "outfit");
+			}
+			if (a_st.sleepOutfit) {
+				set(npc->sleepOutfit, a_st.sleepOutfit, "sleep outfit");
+			}
+
+			std::size_t factions = 0;
+			for (const auto& [faction, rank] : a_st.factions) {
+				if (std::ranges::none_of(npc->factions, [&](const RE::FACTION_RANK& f) { return f.faction == faction; })) {
+					RE::FACTION_RANK entry{};
+					entry.faction = faction;
+					entry.rank = rank;
+					npc->factions.push_back(entry);
+					++factions;
+				}
+			}
+			if (factions) {
+				what.push_back(std::format("{} factions", factions));
+			}
+			if (npc->aiPackages.packages.empty() && !a_st.packages.empty()) {
+				for (auto it = a_st.packages.rbegin(); it != a_st.packages.rend(); ++it) {
+					npc->aiPackages.packages.push_front(*it);
+				}
+				what.push_back(std::format("{} AI packages", a_st.packages.size()));
+			}
+			std::size_t items = 0;
+			for (const auto& [obj, count] : a_st.items) {
+				bool has = false;
+				for (std::uint32_t i = 0; npc->containerObjects && i < npc->numContainerObjects && !has; ++i) {
+					has = npc->containerObjects[i] && npc->containerObjects[i]->obj == obj;
+				}
+				if (!has) {
+					npc->AddObjectToContainer(obj, count, nullptr);
+					++items;
+				}
+			}
+			if (items) {
+				what.push_back(std::format("{} inventory entries", items));
+			}
+			if (!a_st.tints.empty()) {
+				if (!npc->tintLayers) {
+					npc->tintLayers = std::construct_at(RE::calloc<RE::BSTArray<RE::TESNPC::Layer*>>(1));
+				}
+				npc->tintLayers->clear();  // any regenerated defaults are left unreferenced
+				for (const auto& layer : a_st.tints) {
+					auto* copy = RE::calloc<RE::TESNPC::Layer>(1);
+					*copy = layer;
+					npc->tintLayers->push_back(copy);
+				}
+				what.push_back(std::format("{} skin tints", a_st.tints.size()));
+			}
+			if (a_st.faceData) {
+				if (!npc->faceData) {
+					npc->faceData = RE::calloc<RE::TESNPC::FaceData>(1);
+				}
+				*npc->faceData = *a_st.faceData;
+				what.emplace_back("face shape");
+			}
+			a_fixes.Add("emptied NPC records", std::format("{} ({})", Describe(npc), what.empty() ? "nothing else differed" : Join(what)));
+		}
+
+		// Spells, perks and head parts that went missing, then the rest of any
+		// record the revert emptied.
 		void RestoreNpcs(const Snapshot& a_s, Fixes& a_fixes)
 		{
 			for (const auto& [id, st] : a_s.npcs) {
-				auto* npc = st.npc;
+				auto*      npc = st.npc;
+				const bool emptied = Emptied(st);
 				auto* d = npc->actorEffects;
 				const auto spells = d ? Missing(d->spells, d->numSpells, st.spells) : st.spells;
 				const auto levSpells = d ? Missing(d->levSpells, d->numlevSpells, st.levSpells) : st.levSpells;
@@ -431,6 +594,9 @@ namespace charselect::resetguard
 						}
 						a_fixes.Add("NPC hair color and face details", Describe(npc));
 					}
+				}
+				if (emptied) {
+					RestoreEmptied(st, a_fixes);
 				}
 			}
 		}
@@ -524,7 +690,6 @@ namespace charselect::resetguard
 		logger::info("ResetGuard: leaving the lobby's game ({}): captured {} armors, {} skins, {} keyword lists, {} NPCs, {} head parts, {} texture sets ({:.1f} ms)",
 			a_why, g_capture->armors.size(), g_capture->skins.size(), g_capture->keywords.size(), g_capture->npcs.size(), g_capture->headParts.size(),
 			g_capture->textureSets.size(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
-		writewatch::Arm();
 	}
 
 	void Restore(std::string_view a_when, bool a_gameStarted)
@@ -532,7 +697,6 @@ namespace charselect::resetguard
 		if (!g_capture) {
 			return;
 		}
-		writewatch::DisarmAndReport(a_when);  // before our own writes below
 		// What the switch changed, before anything is put back.
 		ReportOtherChanges(*g_capture, a_when);
 		Fixes fixes;

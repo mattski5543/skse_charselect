@@ -10,7 +10,6 @@
 #include "ResetGuard.h"
 #include "SaveIndex.h"
 #include "Sidecar.h"
-#include "SkinAudit.h"
 #include "Util.h"
 #include "core/Encoding.h"
 
@@ -94,7 +93,6 @@ namespace
 			if (charselect::lobby::GetState() != charselect::lobby::State::kIdle) {
 				charselect::resetguard::Capture("load");
 			}
-			charselect::skinaudit::Checkpoint("before load");
 			charselect::lobby::OnPreLoadGame();
 			break;
 		case M::kNewGame:
@@ -122,14 +120,6 @@ namespace
 				charselect::resetguard::Restore(success ? "load" : "failed load", success);
 				charselect::lobby::OnPostLoadGame(success);
 				charselect::sidecar::OnPostLoadGame(success);  // after the lobby has gone idle
-				// Missing-hands diagnostics, for the first few loads of a launch.
-				static int audited = 0;
-				if (success && audited++ < 3) {
-					charselect::skinaudit::Checkpoint("after load", true);
-					charselect::skinaudit::CheckpointAfter(std::chrono::seconds(15), "15s after load", true);
-					charselect::skinaudit::CheckpointAfter(std::chrono::seconds(60), "60s after load", true);
-					charselect::skinaudit::StartWatch();
-				}
 			}
 			break;
 		case M::kDataLoaded:

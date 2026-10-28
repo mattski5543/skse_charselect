@@ -7,7 +7,6 @@
 #include "Poses.h"
 #include "SelectMenu.h"
 #include "ResetGuard.h"
-#include "SkinAudit.h"
 #include "Util.h"
 
 namespace charselect::frontend
@@ -236,7 +235,6 @@ namespace charselect::frontend
 	{
 		g_atMainMenu = true;
 		resetguard::Restore("main menu", false);
-		skinaudit::Checkpoint("main menu");  // the first time: the baseline
 		lobby::OnMainMenuOpened();
 		sidecar::OnMainMenuOpened();
 		if (std::exchange(g_covered, false) && WillReplace()) {
