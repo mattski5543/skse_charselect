@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.26)
 set(PROJECT_AUTHOR "portalfl0w")
 project(
 	CharSelect
-	VERSION 0.9.4
+	VERSION 0.9.5
 	LANGUAGES CXX)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
@@ -43,7 +43,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_precompile_headers(${PROJECT_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/src/PCH.h")
 # Includes <windows.h>, which clashes with CommonLib's own Win32 declarations.
-set_source_files_properties("${PROJECT_SOURCE_DIR}/src/core/Encoding.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+set_source_files_properties("${PROJECT_SOURCE_DIR}/src/core/Encoding.cpp" "${PROJECT_SOURCE_DIR}/src/HwBreakpoints.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)

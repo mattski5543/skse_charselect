@@ -3,6 +3,7 @@
 #include "ResetGuard.h"
 
 #include "Util.h"
+#include "WriteWatch.h"
 #include "core/Encoding.h"
 
 namespace charselect::resetguard
@@ -523,6 +524,7 @@ namespace charselect::resetguard
 		logger::info("ResetGuard: leaving the lobby's game ({}): captured {} armors, {} skins, {} keyword lists, {} NPCs, {} head parts, {} texture sets ({:.1f} ms)",
 			a_why, g_capture->armors.size(), g_capture->skins.size(), g_capture->keywords.size(), g_capture->npcs.size(), g_capture->headParts.size(),
 			g_capture->textureSets.size(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+		writewatch::Arm();
 	}
 
 	void Restore(std::string_view a_when, bool a_gameStarted)
@@ -530,6 +532,7 @@ namespace charselect::resetguard
 		if (!g_capture) {
 			return;
 		}
+		writewatch::DisarmAndReport(a_when);  // before our own writes below
 		// What the switch changed, before anything is put back.
 		ReportOtherChanges(*g_capture, a_when);
 		Fixes fixes;
