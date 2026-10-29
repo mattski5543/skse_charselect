@@ -16,11 +16,12 @@ Loading a save while another game is running is something Skyrim does all the ti
 - **It never changes your save files.** It only reads the short summary at the start of each one (name, level, location) to list your characters.
 - **It cleans up after RaceMenu.** RaceMenu remembers the looks it applied to the select screen's characters and doesn't forget them when a save loads, so CharSelect clears them before you leave the select screen.
 - **It gives you your controls and HUD back** as your save loads, so nothing stays switched off.
+- **It repairs what leaving the select screen resets.** When the select screen's game ends, Skyrim resets some of the game's data to how it is in the plugin files, which a normal load doesn't do, and mods that changed that data while the game was running lose their changes (see Compatibility in the README). Once your save has loaded, CharSelect puts back what went missing or empty: parts of armor and skins, and the spells, perks and looks of characters the reset blanked. It never removes anything or replaces a value your save or a mod has set. This is the one thing CharSelect changes in your game, and like any game data, a save made afterwards includes it: the same data you'd have without the select screen.
 - **It doesn't change mod settings.** During two select-screen sessions on the test setup, no file changed in the game's `Data` folder or in `Documents\My Games\Skyrim Special Edition`, apart from a few mods' own log files. So no mod rewrote its settings while starting up in the throwaway game.
 
 ## How it was tested
 
-**Setup:** Skyrim Anniversary Edition 1.7.104 with a heavy load order: about 1,000 plugins and over 100 SKSE plugins, including RaceMenu and popular body, physics, animation and distribution frameworks. October 2026.
+**Setup:** Skyrim Anniversary Edition 1.7.104 with a heavy load order: about 1,000 plugins and over 100 SKSE plugins, including RaceMenu and popular body, physics, animation and distribution frameworks. October 2026, with CharSelect 0.9.0, before the repair described above existed; the comparison is being repeated on the release build.
 
 **Method:**
 
@@ -62,9 +63,3 @@ When you load a save from the game's own menus and it used mods you've since rem
 If you've removed or changed mods since you last played a character, load them with **Load** (the game's own load menu) or from the normal main menu, which show the warning.
 
 If you'd rather not take the chance at all, set `bReplaceMainMenu = 0` in `CharSelect.ini`. You get the normal main menu, and F7 opens the select screen when you want it.
-
-## For the Nexus description
-
-> **Is it safe for my saves?** In our testing, yes. CharSelect never makes or changes a save, switches saving off while the select screen is up, and cleans up after RaceMenu before your save loads. We tested it on a load order of about 1,000 plugins with over 100 SKSE plugins: the same save loaded with and without the select screen, saved straight away, and compared in detail, including every SKSE plugin's saved information. Nothing from the select screen ended up in the save. Full details and how to check your own setup: [link to SAVE_SAFETY].
->
-> **Known limitation:** the Enter button on the select screen loads your latest save straight away and doesn't show the game's "missing content" warning. If you've removed or changed mods since you last played a character, load them with Load or from the normal main menu instead.

@@ -2,8 +2,6 @@
 
 A character select screen for Skyrim. Instead of the main menu, you start in a scene with your characters gathered together, each in their own look and gear. Pick one and press **Enter** to load their latest save.
 
-<!-- Screenshot of the lobby goes here. -->
-
 ## Features
 
 - Your characters, as they look in your saves: face, body, hair, war paint and worn gear, each standing, sitting or striking a pose.
@@ -48,6 +46,7 @@ Install the archive with your mod manager (Vortex or Mod Organizer 2) and launch
 |---|---|---|
 | `bReplaceMainMenu` | `1` | `0` keeps the normal main menu; F7 there opens the select screen. |
 | `iLobbyHotkey` | `0x41` (F7) | Key that opens the select screen from the main menu. |
+| `bDebugLog` | `0` | `1` writes a detailed `CharSelect.log`, for reporting a problem. |
 | `sLobbyCell` | your installer choice | The select screen's location (cell editor ID): `WhiterunBanneredMare`, `RiftenRaggedFlagon`, `SkyHavenTemple`, `HighHrothgarEntrance`, `SovngardeMeadHall`, or [your own](docs/CUSTOM_LOBBY.md). |
 | `iMaxCharacters` | `5` | How many characters to show, 1 to 9, most recently played first. |
 | `sStandInOutfit` | black hood, robes, boots | What the hooded figure wears for characters not recorded yet. |
@@ -58,7 +57,7 @@ Where characters stand, and the camera, come from the layout for each location (
 
 ## Is it safe for my saves?
 
-Yes, in our testing. CharSelect never writes or changes a save, and saving is switched off while the select screen is up. We compared the same save loaded with and without CharSelect on a load order of about 1,000 plugins, and nothing from the select screen ended up in it. The details, and the limits of that test, are in [docs/SAVE_SAFETY.md](docs/SAVE_SAFETY.md).
+Yes, in our testing. CharSelect never writes or changes a save file, and saving is switched off while the select screen is up. The one thing it changes in your game is described under [Compatibility](#compatibility): once your save has loaded, it puts back game data that leaving the select screen reset. We compared the same save loaded with and without CharSelect on a load order of about 1,000 plugins, and nothing from the select screen ended up in it. The details, and the limits of that test, are in [docs/SAVE_SAFETY.md](docs/SAVE_SAFETY.md).
 
 ## Compatibility
 
@@ -69,9 +68,9 @@ CharSelect handles this itself. Just before the select screen's game ends, it no
 - parts missing from armors and skins, such as the hands of a body skin;
 - skins missing from characters and races;
 - spells, perks, keywords, head parts and hair colour missing from characters, and keywords missing from races, armor and weapons;
-- the whole record of any character it finds reset to blank: face, height, skin tints, factions, AI packages and inventory included.
+- characters the reset blanked completely (every spell and perk gone): their spells, perks, keywords, face, head parts and skin tints, and their other details (factions, AI packages, inventory, outfits, voice, height) where the reset left them empty.
 
-It only adds back what went missing. It never replaces or removes anything a mod has changed since, and it doesn't run when you load from within your own game. It also writes to `CharSelect.log` anything else that changed across the switch (factions, AI packages, inventories, outfits, looks, texture records), so new cases can be found.
+It only fills in what's missing or empty. It never removes anything, never replaces a value a mod or your save has set since, and it doesn't run when you load from within your own game. With `bDebugLog = 1` it also writes to `CharSelect.log` anything else that changed across the switch, so new cases can be found.
 
 | Mod | What happened | Status |
 |---|---|---|
@@ -80,7 +79,7 @@ It only adds back what went missing. It never replaces or removes anything a mod
 | Characters in the select screen's location (seen with the Bannered Mare's Mikael, Uthgerd and Housecarls Pre-Thaneship's Lydia) | Their records came back emptied: no spells, perks or keywords, and Lydia had no hair colour, so her hair rendered pink and a script reading it (OBody) crashed the game. | Handled since 0.9.7 |
 | RaceMenu, with hair from a light (ESL-flagged) plugin (seen with KS Hairdos SMP) | A character's hair showed as a default one in the select screen: RaceMenu left that part out when loading their look, after light plugins had been added to the load order. CharSelect now puts on any part of a character's look that RaceMenu leaves out. | Handled since 0.9.10 |
 
-If something looks wrong only after using the select screen, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`.
+If something looks wrong only after using the select screen, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`, ideally with `bDebugLog = 1`. The log lists your characters' names and the mods involved; paths in it leave out your Windows user name.
 
 ## Known limitations
 
@@ -117,7 +116,7 @@ ctest --preset release              # runs the tests
 
 On Visual Studio 2022, change the generator in `CMakePresets.json` to `Visual Studio 17 2022`. The first build compiles CommonLibSSE-NG and takes a while.
 
-`AGENTS.md` has the detailed notes on how the code is organised and what we've learned about the engine along the way.
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) has the detailed notes on how the code is organised and what we've learned about the engine along the way.
 
 ## Credits
 
