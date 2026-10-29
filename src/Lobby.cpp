@@ -13,10 +13,8 @@
 #include "Tint.h"
 #include "Util.h"
 #include "core/Encoding.h"
-#include "core/Files.h"
 #include "core/FormKey.h"
 #include "core/LayoutMath.h"
-#include "core/PresetIds.h"
 
 namespace charselect::lobby
 {
@@ -737,6 +735,34 @@ namespace charselect::lobby
 			RunAfter(kFreezeDelay, [a_generation, a_index]() { FreezeSlot(a_generation, a_index); });
 		}
 
+		// RaceMenu can leave out saved head parts it should apply: on the
+		// user's setup a hair from a light plugin (KS Hairdos SMP) became a
+		// race default, though the part is found by plugin name and passes
+		// RaceMenu's own sex and race rules (0.9.9). Any such part goes on
+		// here, through the engine call RaceMenu itself uses, while the actor
+		// is still disabled and before its head is built.
+		void AddMissingParts(std::size_t a_index, const Slot& a_slot)
+		{
+			auto* npc = a_slot.npc;
+			if (!npc) {
+				return;
+			}
+			for (auto* part : appearance::SavedHeadParts(a_slot.data.characterId)) {
+				const std::span parts(npc->headParts, npc->headParts ? static_cast<std::size_t>((std::max)(npc->numHeadParts, std::int8_t{ 0 })) : 0);
+				if (std::ranges::find(parts, part) != parts.end()) {
+					continue;
+				}
+				if (const auto why = appearance::WhySkipped(part, npc); !why.empty()) {
+					logger::info("Lobby: slot {} saved part {:08X} {} left off, as RaceMenu does: {}", a_index + 1, part->GetFormID(),
+						part->formEditorID.c_str(), why);
+					continue;
+				}
+				npc->ChangeHeadPart(part);
+				logger::info("Lobby: slot {} saved part {:08X} {} was left out by RaceMenu; put on", a_index + 1, part->GetFormID(),
+					part->formEditorID.c_str());
+			}
+		}
+
 		void OnPresetApplied(std::uint32_t a_generation, std::size_t a_index, bool a_ok)
 		{
 			if (a_generation != g_enterGeneration || g_state != State::kActive || a_index >= g_slots.size()) {
@@ -755,7 +781,9 @@ namespace charselect::lobby
 				return;
 			}
 			if (!slot.placeholder) {
-				const auto who = std::format("slot {} '{}' after LoadCharacterEx", a_index + 1, slot.data.name);
+				appearance::LogRecord(std::format("slot {} '{}' after LoadCharacterEx", a_index + 1, slot.data.name), slot.npc);
+				AddMissingParts(a_index, slot);
+				const auto who = std::format("slot {} '{}' with missing parts added", a_index + 1, slot.data.name);
 				appearance::LogRecord(who, slot.npc);
 				appearance::CheckPreset(who, slot.data.characterId, slot.npc);
 			}
@@ -795,40 +823,6 @@ namespace charselect::lobby
 			}
 			if (player) {
 				SpawnSlot(a_index, player);
-			}
-		}
-
-		// RaceMenu can't find a light plugin's parts in a saved look once that
-		// plugin's light slot has moved (a mod hair became a race default; see
-		// core/PresetIds.h), so those IDs are rewritten first. Our own file;
-		// the next export writes the slot back in, and this runs every time.
-		void FixPresetIds(std::size_t a_index, const Slot& a_slot)
-		{
-			const auto  path = paths::PresetPath(a_slot.data.characterId);
-			std::string text;
-			{
-				std::ifstream in(path, std::ios::binary);
-				if (!in) {
-					return;
-				}
-				text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-			}
-			auto*      dh = RE::TESDataHandler::GetSingleton();
-			const auto fixes = presetids::FixLightPluginIds(text, [dh](std::string_view a_plugin) {
-				const auto* file = dh ? dh->LookupModByName(a_plugin) : nullptr;
-				return file && file->IsLight();
-			});
-			if (fixes.empty()) {
-				return;
-			}
-			std::string error;
-			if (!files::WriteAtomic(path, text, error)) {
-				logger::warn("Lobby: slot {}: could not rewrite light-plugin IDs in {}: {}", a_index + 1, text::PathUtf8(path.filename()), error);
-				return;
-			}
-			for (const auto& fix : fixes) {
-				logger::info("Lobby: slot {} saved look: {}|{:06X} -> {:06X} (light plugin: the ID without its load-order slot)", a_index + 1,
-					text::ToUtf8(fix.plugin), fix.from, fix.to);
 			}
 		}
 
@@ -880,7 +874,6 @@ namespace charselect::lobby
 			// LoadCharacterEx points the face tint at the exported DDS; make sure
 			// something is there so a failed export can't render pink.
 			tint::EnsurePlaceholder(slot.data.characterId);
-			FixPresetIds(a_index, slot);
 			appearance::LogRecord(std::format("slot {} '{}' before LoadCharacterEx", a_index + 1, slot.data.name), slot.npc);
 
 			const bool queued = papyrus::CallStatic("CharGen", "LoadCharacterEx",

@@ -109,27 +109,57 @@ namespace charselect::appearance
 			return { form, form ? "" : "no such form in the plugin" };
 		}
 
-		// Why RaceMenu's ApplyPresetData would skip a part on this record:
-		// it applies only parts flagged for the record's sex whose valid-race
-		// list holds the record's race.
-		std::string WouldSkip(const RE::BGSHeadPart* a_part, const RE::TESNPC* a_npc)
+		std::optional<json> ReadPreset(std::uint32_t a_characterId, std::string_view a_who)
 		{
-			if (!a_npc) {
-				return "";
+			try {
+				std::ifstream in(paths::PresetPath(a_characterId), std::ios::binary);
+				if (!in) {
+					return std::nullopt;
+				}
+				return json::parse(in);
+			} catch (const std::exception& e) {
+				logger::warn("Look: {}: saved look unreadable: {}", a_who, e.what());
+				return std::nullopt;
 			}
-			const bool female = a_npc->actorData.actorBaseFlags.all(RE::ACTOR_BASE_DATA::Flag::kFemale);
-			if (!a_part->flags.all(female ? RE::BGSHeadPart::Flag::kFemale : RE::BGSHeadPart::Flag::kMale)) {
-				return std::format("not for {}", female ? "women" : "men");
-			}
-			if (!a_part->validRaces) {
-				return "no valid-race list";
-			}
-			if (!a_npc->race || !a_part->validRaces->HasForm(a_npc->race)) {
-				return std::format("race {} not in its list {:08X}", a_npc->race ? a_npc->race->formEditorID.c_str() : "none",
-					a_part->validRaces->GetFormID());
-			}
+		}
+	}
+
+	// RaceMenu's ApplyPresetData applies only parts flagged for the record's
+	// sex whose valid-race list holds the record's race.
+	std::string WhySkipped(const RE::BGSHeadPart* a_part, const RE::TESNPC* a_npc)
+	{
+		if (!a_npc) {
 			return "";
 		}
+		const bool female = a_npc->actorData.actorBaseFlags.all(RE::ACTOR_BASE_DATA::Flag::kFemale);
+		if (!a_part->flags.all(female ? RE::BGSHeadPart::Flag::kFemale : RE::BGSHeadPart::Flag::kMale)) {
+			return std::format("not for {}", female ? "women" : "men");
+		}
+		if (!a_part->validRaces) {
+			return "no valid-race list";
+		}
+		if (!a_npc->race || !a_part->validRaces->HasForm(a_npc->race)) {
+			return std::format("race {} not in its list {:08X}", a_npc->race ? a_npc->race->formEditorID.c_str() : "none",
+				a_part->validRaces->GetFormID());
+		}
+		return "";
+	}
+
+	std::vector<RE::BGSHeadPart*> SavedHeadParts(std::uint32_t a_characterId)
+	{
+		std::vector<RE::BGSHeadPart*> out;
+		const auto                    root = ReadPreset(a_characterId, "saved head parts");
+		const auto                    it = root ? root->find("headParts") : json::const_iterator{};
+		if (!root || it == root->end() || !it->is_array()) {
+			return out;
+		}
+		for (const auto& entry : *it) {
+			const auto resolved = Resolve(entry.value("formIdentifier", std::string{}));
+			if (auto* part = resolved.form ? const_cast<RE::TESForm*>(resolved.form)->As<RE::BGSHeadPart>() : nullptr) {
+				out.push_back(part);
+			}
+		}
+		return out;
 	}
 
 	void LogRecord(std::string_view a_who, const RE::TESNPC* a_npc)
@@ -174,17 +204,11 @@ namespace charselect::appearance
 	{
 		const auto path = paths::PresetPath(a_characterId);
 		logger::info("Look: {}: saved look {} {}, tint {}", a_who, text::PathUtf8(path.filename()), FileTime(path), FileTime(tint::Path(a_characterId)));
-		json root;
-		try {
-			std::ifstream in(path, std::ios::binary);
-			if (!in) {
-				return;
-			}
-			root = json::parse(in);
-		} catch (const std::exception& e) {
-			logger::warn("Look: {}: saved look unreadable: {}", a_who, e.what());
+		const auto read = ReadPreset(a_characterId, a_who);
+		if (!read) {
 			return;
 		}
+		const auto& root = *read;
 
 		std::vector<const RE::BGSHeadPart*> saved;
 		if (const auto it = root.find("headParts"); it != root.end() && it->is_array()) {
@@ -199,7 +223,7 @@ namespace charselect::appearance
 					continue;
 				}
 				saved.push_back(part);
-				const auto skip = WouldSkip(part, a_npc);
+				const auto skip = WhySkipped(part, a_npc);
 				logger::info("Look:   saved part {} -> {}{}{}", text::ToUtf8(identifier), Describe(part),
 					part->GetFormID() != stored ? std::format(" (stored as {:08X}: the plugin moved in the load order)", stored) : "",
 					skip.empty() ? "" : std::format("; RaceMenu would skip it: {}", skip));
