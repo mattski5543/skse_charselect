@@ -67,13 +67,8 @@ namespace charselect::lobby
 	void OnJournalClosed();  // brings the select screen back after a cancelled LOAD
 	void OnNewGame();        // SKSE NewGame: blocks saving in the lobby's game at once
 	// An object's 3D loaded (TESObjectLoadedEvent): anyone arriving in the
-	// lobby is hidden at once instead of at the next sweep (issue 1).
+	// lobby is hidden at once instead of at the next sweep.
 	void OnObjectLoaded(RE::FormID a_formID);
-
-	// Records a form created at runtime in the lobby's game. After a load (and
-	// when the main menu opens) the log says how many are still registered
-	// with the engine, to find out whether the engine frees them. Main thread.
-	void NoteRuntimeForm(const RE::TESForm* a_form, std::string_view a_kind);
 
 	// Actions from the select menu.
 	void Play(std::size_t a_slot);  // latest save

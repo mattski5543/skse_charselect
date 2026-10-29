@@ -21,7 +21,7 @@ namespace charselect::config
 		const auto path = std::filesystem::current_path() / "Data" / "SKSE" / "Plugins" / "CharSelect.ini";
 		std::ifstream in(path);
 		if (!in) {
-			logger::info("Config: {} not found, using defaults", text::PathUtf8(path));
+			logger::info("Config: CharSelect.ini not found, using defaults");
 			return;
 		}
 
@@ -35,7 +35,7 @@ namespace charselect::config
 		}
 
 		const auto& s = g_settings;
-		logger::info("Config: replaceMainMenu={} hotkey={:#x} cell='{}' fallback='{}' max={}", s.replaceMainMenu, s.lobbyHotkey, s.lobbyCell,
-			s.fallbackCell, s.maxCharacters);
+		logger::info("Config: replaceMainMenu={} hotkey={:#x} debugLog={} cell='{}' fallback='{}' max={}", s.replaceMainMenu, s.lobbyHotkey,
+			s.debugLog, s.lobbyCell, s.fallbackCell, s.maxCharacters);
 	}
 }

@@ -85,10 +85,10 @@ namespace charselect::sidecar
 				logger::info("Sidecar: no tint texture for {}, but the player has changed since; not retrying", FormatCharacterId(id));
 				return;
 			case ExportTracker::Outcome::kGiveUp:
-				logger::error("Sidecar: giving up on the tint export for {}; the lobby will use a flat skin tone", FormatCharacterId(id));
+				logger::warn("Sidecar: giving up on the tint export for {}; the lobby will use a flat skin tone", FormatCharacterId(id));
 				return;
 			case ExportTracker::Outcome::kRetry:
-				logger::warn("Sidecar: no tint texture was exported for {} (attempt {}, camera was {} person)", FormatCharacterId(id),
+				logger::info("Sidecar: no tint texture was exported for {} (attempt {}, camera was {} person)", FormatCharacterId(id),
 					g_exports.Failures(id), a_thirdPerson ? "third" : "first");
 				if (!g_tintWatcher) {
 					g_tintWatcher = true;
@@ -109,20 +109,6 @@ namespace charselect::sidecar
 			return FormRef{ text::ToUtf8(owner->file->GetFilename()), owner->localId, text::ToUtf8(name ? name : "") };
 		}
 
-		std::vector<std::string> LoadOrder()
-		{
-			std::vector<std::string> out;
-			if (auto* dh = RE::TESDataHandler::GetSingleton()) {
-				for (const auto* file : dh->compiledFileCollection.files) {
-					out.push_back(text::ToUtf8(file->GetFilename()));
-				}
-				for (const auto* file : dh->compiledFileCollection.smallFiles) {
-					out.push_back(text::ToUtf8(file->GetFilename()));
-				}
-			}
-			return out;
-		}
-
 		// A worn item generated at runtime (FF form ID, no plugin to look it up
 		// in later): logged so we learn what mods make these, and replaced by
 		// the item it was made from, which looks the same, if it has one.
@@ -139,7 +125,7 @@ namespace charselect::sidecar
 			}
 			const char* name = a_obj->GetName();
 			auto        ref = made ? MakeFormRef(made) : std::nullopt;
-			logger::info("Sidecar:   worn item {:08X} '{}' was generated at runtime (form type {}, {}); made from {}", a_obj->GetFormID(), name ? name : "",
+			logger::debug("Sidecar:   worn item {:08X} '{}' was generated at runtime (form type {}, {}); made from {}", a_obj->GetFormID(), name ? name : "",
 				static_cast<int>(a_obj->GetFormType()), detail.empty() ? "-" : detail,
 				ref ? std::format("{} {:08X} '{}', saved instead", ref->plugin, ref->localId, ref->name) :
 					  made ? std::format("{:08X}, also generated; skipped", made->GetFormID()) : "nothing; skipped");
@@ -325,23 +311,17 @@ namespace charselect::sidecar
 			const auto start = std::chrono::steady_clock::now();
 			Sidecar s;
 			s.characterId = parts->characterId;
-			s.saveName = std::string(a_saveName);
-			s.capturedAt = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 			// Engine text is in the game's code page; JSON needs UTF-8 (a
 			// name like "Björn" made dump() throw and crash the game).
 			s.name = text::ToUtf8(player->GetName() ? player->GetName() : "");
-			s.level = player->GetLevel();
 			if (auto race = MakeFormRef(player->GetRace())) {
 				s.race = *race;
 			} else {
 				logger::warn("Sidecar: player race has no source plugin");
 			}
 			s.female = npc->IsFemale();
-			s.weight = npc->weight;
-			s.height = npc->height;
 			s.worn = WornItems(player);
 			s.spells = HandSpells(player);
-			s.plugins = LoadOrder();
 
 			const auto id = parts->characterId;
 			std::optional<ExportTracker::Ticket> ticket;
@@ -373,8 +353,8 @@ namespace charselect::sidecar
 			const bool  ok = files::WriteAtomic(*path, ToJson(s).dump(2, ' ', false, nlohmann::json::error_handler_t::replace), error);
 			const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 			if (ok) {
-				logger::info("Sidecar: wrote {} on {} for {} '{}' lvl {} ({} worn, {} spells, {} plugins, {:.1f} ms)", text::PathUtf8(path->filename()),
-					a_why, FormatCharacterId(id), s.name, s.level, s.worn.size(), s.spells.size(), s.plugins.size(), ms);
+				logger::info("Sidecar: wrote {} on {} for {} '{}' ({} worn, {} spells, {:.1f} ms)", text::PathUtf8(path->filename()), a_why,
+					FormatCharacterId(id), s.name, s.worn.size(), s.spells.size(), ms);
 				for (const auto& w : s.worn) {
 					logger::debug("  worn: {} {:08X} '{}'{}", w.plugin, w.localId, w.name, w.hand.empty() ? "" : " (" + w.hand + " hand)");
 				}
@@ -431,7 +411,7 @@ namespace charselect::sidecar
 		const auto       parts = ParseSaveName(g_loadingSave);
 		std::scoped_lock lock(g_lock);
 		if (g_exports.HasPending()) {
-			logger::info("Sidecar: dropping pending tint export retries (game loading)");
+			logger::debug("Sidecar: dropping pending tint export retries (game loading)");
 		}
 		g_exports.OnLoad(parts ? std::optional(parts->characterId) : std::nullopt);
 	}

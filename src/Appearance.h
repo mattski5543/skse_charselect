@@ -1,9 +1,9 @@
 #pragma once
 
 // A character's look at each step between their real game and the select
-// screen, logged so a log shows where it stops matching (a mod hair and the
-// face not matching in the lobby, 0.9.8), and the saved look's head parts for
-// the lobby to check RaceMenu's work against. Reads; never changes anything.
+// screen, written to the debug log (bDebugLog) so a report shows where it
+// stops matching, and the saved look's head parts for the lobby to check
+// RaceMenu's work against. Reads; never changes anything.
 
 namespace charselect::appearance
 {

@@ -8,6 +8,7 @@
 #include "SelectMenu.h"
 #include "ResetGuard.h"
 #include "Util.h"
+#include "core/Text.h"
 
 namespace charselect::frontend
 {
@@ -22,7 +23,7 @@ namespace charselect::frontend
 		std::optional<std::chrono::steady_clock::time_point> g_mainMenuOpenedAt;  // until the lobby shows
 
 		// RaceMenu applies every character's look; without it the lobby would
-		// show nobody, so the vanilla menu stays (X3).
+		// show nobody, so the vanilla menu stays.
 		bool g_raceMenu{ true };
 		bool g_warnedRaceMenu{ false };
 
@@ -59,13 +60,6 @@ namespace charselect::frontend
 			}
 		}
 
-		std::string Lower(std::string_view a_text)
-		{
-			std::string out(a_text);
-			std::ranges::transform(out, out.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-			return out;
-		}
-
 		// Logs every GameDelegate callback the main menu registered, so we can
 		// see the real names on this game version.
 		void LogMainMenuCallbacks()
@@ -80,9 +74,9 @@ namespace charselect::frontend
 				names.emplace_back(entry.first.c_str());
 			}
 			std::ranges::sort(names);
-			logger::info("Frontend: main menu GameDelegate callbacks ({}):", names.size());
+			logger::debug("Frontend: main menu GameDelegate callbacks ({}):", names.size());
 			for (const auto& n : names) {
-				logger::info("Frontend:   {}", n);
+				logger::debug("Frontend:   {}", n);
 			}
 		}
 
@@ -96,13 +90,13 @@ namespace charselect::frontend
 				return false;
 			}
 			for (const auto keyword : a_keywords) {
-				const auto key = Lower(keyword);
+				const auto key = text::Lower(keyword);
 				for (auto& entry : menu->fxDelegate->callbacks) {
 					const std::string name = entry.first.c_str();
-					if (Lower(name).find(key) == std::string::npos || !entry.second.callback) {
+					if (text::Lower(name).find(key) == std::string::npos || !entry.second.callback) {
 						continue;
 					}
-					logger::info("Frontend: invoking main menu callback '{}' (matched '{}')", name, keyword);
+					logger::debug("Frontend: invoking main menu callback '{}' (matched '{}')", name, keyword);
 					RE::FxDelegateArgs args(RE::GFxValue(), entry.second.handler.get(), menu->uiMovie.get(), nullptr, 0);
 					entry.second.callback(args);
 					return true;
@@ -161,7 +155,7 @@ namespace charselect::frontend
 		{
 			if (g_mainMenuOpenedAt) {
 				const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *g_mainMenuOpenedAt).count();
-				logger::info("Frontend: lobby shown {} ms after the main menu opened", ms);
+				logger::debug("Frontend: lobby shown {} ms after the main menu opened", ms);
 				g_mainMenuOpenedAt.reset();
 			}
 			SelectMenu::ShowSelect();
@@ -226,7 +220,7 @@ namespace charselect::frontend
 			return;
 		}
 		auto menu = MainMenu();
-		logger::info("Frontend: covering the vanilla main menu as it opens (movie {})", menu && menu->uiMovie ? "hidden" : "not loaded yet");
+		logger::debug("Frontend: covering the vanilla main menu as it opens (movie {})", menu && menu->uiMovie ? "hidden" : "not loaded yet");
 		SetVanillaVisible(false);
 		SelectMenu::ShowSplash("Loading");
 	}
@@ -377,7 +371,7 @@ namespace charselect::frontend
 			const bool panel = a_page.Invoke("__set__currentState", nullptr, &saveLoad, 1);
 			const bool buttons = a_page.Invoke("StartState", nullptr, &saveLoad, 1);
 			const bool list = a_page.Invoke("StartState", nullptr, &characters, 1);
-			logger::info("Frontend: Journal character list: panel {}, buttons {}, characters {}", panel, buttons, list);
+			logger::debug("Frontend: Journal character list: panel {}, buttons {}, characters {}", panel, buttons, list);
 			return panel && buttons && list;
 		}
 
@@ -487,7 +481,7 @@ namespace charselect::frontend
 				}
 				std::array<RE::GFxValue, 2> args{ RE::GFxValue(2.0), RE::GFxValue(false) };
 				const bool                  ok = menu.Invoke("RestoreSavedSettings", nullptr, args.data(), args.size());
-				logger::info("Frontend: Journal to its System tab -> {}", ok ? "done" : "call failed");
+				logger::debug("Frontend: Journal to its System tab -> {}", ok ? "done" : "call failed");
 				if (ok) {
 					RunAfter(kJournalTabSettle, []() { OpenCharacterList(); });
 				}

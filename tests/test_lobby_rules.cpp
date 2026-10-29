@@ -74,7 +74,7 @@ TEST_CASE("PreLoadGame", "[lobby]")
 	{
 		CHECK(OnPreLoadGame(State::kActive) == PreLoad::kStopLobby);
 	}
-	SECTION("a load while entering abandons the lobby, so it never stages in the player's game (L1)")
+	SECTION("a load while entering abandons the lobby, so it never stages in the player's game")
 	{
 		CHECK(OnPreLoadGame(State::kEntering) == PreLoad::kAbandonEntering);
 	}
@@ -106,7 +106,7 @@ TEST_CASE("PostLoadGame", "[lobby]")
 		CHECK(OnPostLoadGame(State::kLoadingSave, true) == PostLoad::kLeave);
 		CHECK(OnPostLoadGame(State::kActive, true) == PostLoad::kLeave);
 	}
-	SECTION("a failed load reported while Active (no PreLoadGame seen) keeps the lobby (L9)")
+	SECTION("a failed load reported while Active (no PreLoadGame seen) keeps the lobby")
 	{
 		// The lobby game is still running: leaving would forget it and turn
 		// saving back on in it.
@@ -240,7 +240,7 @@ TEST_CASE("The main menu is replaced only when everything allows it", "[lobby][f
 	{
 		ctx.loadFailedRecently = true;
 	}
-	SECTION("the select menu's SWF didn't load (L7)")
+	SECTION("the select menu's SWF didn't load")
 	{
 		ctx.menuAvailable = false;
 	}
@@ -249,7 +249,7 @@ TEST_CASE("The main menu is replaced only when everything allows it", "[lobby][f
 
 TEST_CASE("A console load while the lobby starts", "[lobby][sequence]")
 {
-	// L1: the player's game must not get the lobby staged into it.
+	// The player's game must not get the lobby staged into it.
 	State state = State::kEntering;
 	REQUIRE(OnPreLoadGame(state) == PreLoad::kAbandonEntering);
 	state = State::kIdle;  // ForgetLobby

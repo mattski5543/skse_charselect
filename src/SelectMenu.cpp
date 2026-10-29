@@ -86,9 +86,7 @@ namespace charselect
 			float                        cursorX{ -1.0f };
 			float                        cursorY{ -1.0f };
 			bool                         needsBuild{ true };
-			bool                         gfxMouseLive{ false };
-			float                        lastXMouse{ 0.0f };
-			int                          calibrationLogs{ 0 };
+			int                          cursorLogs{ 0 };  // debug: the first few cursor mappings
 			float                        fade{ 0.0f };  // seconds left of the splash fading out
 			bool                         spinnerBuilt{ false };  // _root.ui.spinner exists
 			float                        spinTime{ 0.0f };
@@ -548,7 +546,7 @@ namespace charselect
 			a_ui.Gradient(a_clip, 0, 0, a_w, kStageH, kBlack, { { a_alphaFrom, 0.0 }, { a_alphaTo, 255.0 } }, false);
 		}
 
-		// "2026-10-13 21:15:30" -> "13 Oct 2026"
+		// Between the parts of a character's info line.
 		constexpr const char* kDot = "   \xC2\xB7   ";  // spaced middle dot (UTF-8)
 
 		// Plain text entry: grey, white with a soft glow on hover, Skyrim menu style.
@@ -1050,31 +1048,20 @@ namespace charselect
 			return m;
 		}
 
-		void UpdateCursor(RE::GFxMovieView* a_movie, const StageMapping& a_map)
+		// The game cursor (screen pixels) mapped into stage coordinates. GFx's
+		// own _root._xmouse never updates in this menu.
+		void UpdateCursor(const StageMapping& a_map)
 		{
-			// Prefer GFx's own mouse position once it's seen moving; otherwise map
-			// the game cursor (screen pixels) into stage coordinates.
-			const float xm = static_cast<float>(a_movie->GetVariableDouble("_root._xmouse"));
-			const float ym = static_cast<float>(a_movie->GetVariableDouble("_root._ymouse"));
-			if (xm != g_view.lastXMouse && g_view.lastXMouse != 0.0f) {
-				g_view.gfxMouseLive = true;
-			}
-			g_view.lastXMouse = xm;
-
 			float cx = -1.0f, cy = -1.0f;
 			if (auto* cursor = RE::MenuCursor::GetSingleton()) {
 				const auto& rd = cursor->GetRuntimeData();
 				cx = a_map.visLeft + (rd.cursorPosX - a_map.vpLeft) / a_map.vpW * a_map.visW;
 				cy = a_map.visTop + (rd.cursorPosY - a_map.vpTop) / a_map.vpH * a_map.visH;
-				if (g_view.calibrationLogs < 5) {
-					++g_view.calibrationLogs;
-					logger::debug("SelectMenu: cursor screen ({:.0f}, {:.0f}) -> stage ({:.0f}, {:.0f}); gfx _xmouse ({:.0f}, {:.0f}); viewport {}x{}+{}+{} visible {:.0f}x{:.0f}",
-						rd.cursorPosX, rd.cursorPosY, cx, cy, xm, ym, a_map.vpW, a_map.vpH, a_map.vpLeft, a_map.vpTop, a_map.visW, a_map.visH);
+				if (g_view.cursorLogs < 5) {
+					++g_view.cursorLogs;
+					logger::debug("SelectMenu: cursor screen ({:.0f}, {:.0f}) -> stage ({:.0f}, {:.0f}); viewport {}x{}+{}+{} visible {:.0f}x{:.0f}",
+						rd.cursorPosX, rd.cursorPosY, cx, cy, a_map.vpW, a_map.vpH, a_map.vpLeft, a_map.vpTop, a_map.visW, a_map.visH);
 				}
-			}
-			if (g_view.gfxMouseLive) {
-				cx = xm;
-				cy = ym;
 			}
 			g_view.cursorX = cx;
 			g_view.cursorY = cy;
@@ -1179,7 +1166,7 @@ namespace charselect
 	{
 		if (auto* ui = RE::UI::GetSingleton()) {
 			ui->Register(MENU_NAME, []() -> RE::IMenu* { return new SelectMenu(); });
-			logger::info("SelectMenu: registered '{}'", MENU_NAME);
+			logger::debug("SelectMenu: registered '{}'", MENU_NAME);
 		}
 	}
 
@@ -1195,7 +1182,7 @@ namespace charselect
 		if (!IsOpen()) {
 			RE::UIMessageQueue::GetSingleton()->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
 		}
-		logger::info("SelectMenu: splash '{}'", a_text);
+		logger::debug("SelectMenu: splash '{}'", a_text);
 	}
 
 	void SelectMenu::SetGamepad(bool a_gamepad)
@@ -1229,7 +1216,7 @@ namespace charselect
 		if (!IsOpen()) {
 			RE::UIMessageQueue::GetSingleton()->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
 		}
-		logger::info("SelectMenu: select screen");
+		logger::debug("SelectMenu: select screen");
 	}
 
 	void SelectMenu::ShowEdit()
@@ -1245,7 +1232,7 @@ namespace charselect
 		if (!IsOpen()) {
 			RE::UIMessageQueue::GetSingleton()->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
 		}
-		logger::info("SelectMenu: layout editor");
+		logger::debug("SelectMenu: layout editor");
 	}
 
 	void SelectMenu::QueueEdit(EditKey a_key)
@@ -1261,7 +1248,7 @@ namespace charselect
 		// that isn't open is ignored by the UI.
 		if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
 			queue->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
-			logger::info("SelectMenu: hide");
+			logger::debug("SelectMenu: hide");
 		}
 	}
 
@@ -1425,7 +1412,7 @@ namespace charselect
 		const auto map = GetMapping(uiMovie.get());
 		const bool interactive = (g_view.mode == Mode::kSelect || g_view.mode == Mode::kEdit) && !Leaving();
 		if (interactive) {
-			UpdateCursor(uiMovie.get(), map);
+			UpdateCursor(map);
 			if (g_view.mode == Mode::kEdit) {
 				if (selectRequest) {
 					SetEditTarget(*selectRequest + 1);

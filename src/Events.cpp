@@ -108,10 +108,8 @@ namespace charselect::events
 						HandleEditorRepeat(*button);
 					}
 				}
-				return;
 			}
 
-		private:
 			static void HandleEditorRepeat(const RE::ButtonEvent& a_button)
 			{
 				if (!input::RepeatReachesEditor(CurrentContext())) {
@@ -194,8 +192,8 @@ namespace charselect::events
 				} else if (lobby::GetState() != lobby::State::kIdle && menu != RE::CursorMenu::MENU_NAME && menu != RE::FaderMenu::MENU_NAME &&
 						   menu != RE::HUDMenu::MENU_NAME) {
 					// Mods' own menus opening at new-game start could cover the
-					// lobby or take its input; log them so we know which (L3).
-					logger::info("Menu: '{}' {} while the lobby is {}", menu, opening ? "opened" : "closed", lobby::StateName(lobby::GetState()));
+					// lobby or take its input; log them so we know which.
+					logger::debug("Menu: '{}' {} while the lobby is {}", menu, opening ? "opened" : "closed", lobby::StateName(lobby::GetState()));
 				}
 
 				if (menu == RE::MessageBoxMenu::MENU_NAME && opening && lobby::ShouldDismissMessageBoxes()) {
@@ -222,7 +220,6 @@ namespace charselect::events
 				} else if (menu == RE::RaceSexMenu::MENU_NAME && !opening) {
 					sidecar::OnRaceMenuClosed();
 				}
-				return;
 			}
 		};
 
@@ -256,19 +253,19 @@ namespace charselect::events
 	{
 		if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
 			input->AddEventSink<RE::InputEvent*>(InputSink::GetSingleton());
-			logger::info("Events: input sink registered (lobby hotkey scan code {:#04x})", config::Get().lobbyHotkey);
+			logger::debug("Events: input sink registered (lobby hotkey scan code {:#04x})", config::Get().lobbyHotkey);
 		} else {
 			logger::error("Events: BSInputDeviceManager unavailable, no hotkeys");
 		}
 		if (auto* ui = RE::UI::GetSingleton()) {
 			ui->AddEventSink<RE::MenuOpenCloseEvent>(MenuSink::GetSingleton());
-			logger::info("Events: menu sink registered");
+			logger::debug("Events: menu sink registered");
 		} else {
 			logger::error("Events: UI unavailable, no menu events");
 		}
 		if (auto* scripts = RE::ScriptEventSourceHolder::GetSingleton()) {
 			scripts->AddEventSink<RE::TESObjectLoadedEvent>(ObjectLoadedSink::GetSingleton());
-			logger::info("Events: object loaded sink registered");
+			logger::debug("Events: object loaded sink registered");
 		} else {
 			logger::error("Events: ScriptEventSourceHolder unavailable; arrivals in the lobby are only caught by the sweep");
 		}

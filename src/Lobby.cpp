@@ -25,7 +25,7 @@ namespace charselect::lobby
 		constexpr RE::FormID    kPlayerBaseId = 0x7;
 		// Skyrim.esm BardAudienceExcludedFaction: BardAudienceQuest's bystander
 		// aliases skip its members. Without it, a bard's song in the lobby cell
-		// pulls our characters off their spots to stand and applaud (L8).
+		// pulls our characters off their spots to stand and applaud.
 		constexpr RE::FormID    kBardAudienceExcludedFaction = 0x10FCB4;
 
 		// After the loading screen closes, wait for the player to be settled in
@@ -102,50 +102,6 @@ namespace charselect::lobby
 
 		std::function<void(std::string_view)> g_onFailure;
 		std::function<void()>                 g_onReady;
-
-		// Every form the lobby created at runtime (NoteRuntimeForm). The
-		// pointer is only compared, never dereferenced: it may be gone.
-		struct RuntimeForm
-		{
-			RE::FormID         id{ 0 };
-			const RE::TESForm* form{ nullptr };
-			RE::FormType       type{ RE::FormType::None };
-			std::string        kind;
-		};
-		std::vector<RuntimeForm> g_runtimeForms;
-
-		// For each kind: how many of our forms are still registered under their
-		// ID, how many IDs are free, and how many now belong to another form.
-		void ReportRuntimeForms(std::string_view a_when, bool a_forget)
-		{
-			if (g_runtimeForms.empty()) {
-				return;
-			}
-			struct Count
-			{
-				std::size_t kept{ 0 }, gone{ 0 }, reused{ 0 };
-			};
-			std::map<std::string, Count> counts;
-			for (const auto& f : g_runtimeForms) {
-				auto& c = counts[f.kind];
-				const auto* now = RE::TESForm::LookupByID(f.id);
-				if (!now) {
-					++c.gone;
-				} else if (now == f.form && now->GetFormType() == f.type) {
-					++c.kept;
-				} else {
-					++c.reused;
-				}
-			}
-			logger::info("Lobby: runtime forms after {} ({} created by the lobby):", a_when, g_runtimeForms.size());
-			for (const auto& [kind, c] : counts) {
-				logger::info("Lobby:   {}: {} still registered, {} no longer registered, {} IDs now used by another form", kind, c.kept, c.gone,
-					c.reused);
-			}
-			if (a_forget) {
-				g_runtimeForms.clear();
-			}
-		}
 
 		void  TrySpawn(std::uint32_t a_generation, int a_attempt);
 		float WrapAngle(float a_rad);
@@ -253,7 +209,7 @@ namespace charselect::lobby
 			const auto pos = player->GetPosition();
 			auto*      cell = player->GetParentCell();
 			const char* cellId = cell ? cell->GetFormEditorID() : nullptr;
-			logger::info("Lobby: player {}: pos ({:.0f}, {:.0f}, {:.0f}) heading {:.2f} cell {:08X} '{}' attached={} 3D={}",
+			logger::debug("Lobby: player {}: pos ({:.0f}, {:.0f}, {:.0f}) heading {:.2f} cell {:08X} '{}' attached={} 3D={}",
 				a_when, pos.x, pos.y, pos.z, player->GetAngleZ(), cell ? cell->GetFormID() : 0, cellId ? cellId : "",
 				cell && cell->IsAttached(), player->Is3DLoaded());
 		}
@@ -269,18 +225,18 @@ namespace charselect::lobby
 				const auto& slot = g_slots[i];
 				auto ref = slot.view.ref.get();
 				if (!ref) {
-					logger::info("Lobby:   slot {}: no reference", i + 1);
+					logger::debug("Lobby:   slot {}: no reference", i + 1);
 					continue;
 				}
 				const auto  pos = ref->GetPosition();
 				auto*       actor = ref->As<RE::Actor>();
 				auto*       npc = actor ? actor->GetActorBase() : nullptr;
 				const auto* body = actor ? actor->GetWornArmor(RE::BGSBipedObjectForm::BipedObjectSlot::kBody) : nullptr;
-				logger::info("Lobby:   slot {} {:08X}: pos ({:.0f}, {:.0f}, {:.0f}) off-target {:.0f} dist-to-camera {:.0f} disabled={} 3D={} AI={} ready={}",
+				logger::debug("Lobby:   slot {} {:08X}: pos ({:.0f}, {:.0f}, {:.0f}) off-target {:.0f} dist-to-camera {:.0f} disabled={} 3D={} AI={} ready={}",
 					i + 1, ref->GetFormID(), pos.x, pos.y, pos.z, pos.GetDistance(slot.pos),
 					player ? pos.GetDistance(player->GetPosition()) : -1.0f, ref->IsDisabled(), ref->Is3DLoaded(),
 					actor && actor->IsAIEnabled(), slot.view.ready);
-				logger::info("Lobby:     race {:08X} faceNPC {:08X} headParts {} weight {:.0f} body armor '{}'",
+				logger::debug("Lobby:     race {:08X} faceNPC {:08X} headParts {} weight {:.0f} body armor '{}'",
 					actor && actor->GetRace() ? actor->GetRace()->GetFormID() : 0,
 					npc && npc->faceNPC ? npc->faceNPC->GetFormID() : 0, npc ? npc->numHeadParts : 0, npc ? npc->weight : 0.0f,
 					body && body->GetName() ? body->GetName() : "<none>");
@@ -391,27 +347,9 @@ namespace charselect::lobby
 				return nullptr;
 			}
 			npc->Copy(templ);
-			// Review L6 (unverified): heap members Copy() may leave shared with the
-			// player's base. Head parts, face and head data are un-shared below;
-			// this logs the rest so a session's log shows whether any are shared.
-			logger::info("Lobby: base copy shares with the player's base: tint layers {}, perks {}, spells {}, factions {}",
-				npc->tintLayers && npc->tintLayers == templ->tintLayers, npc->perks && npc->perks == templ->perks,
-				npc->actorEffects && npc->actorEffects == templ->actorEffects,
-				!npc->factions.empty() && npc->factions.data() == templ->factions.data());
-			NoteRuntimeForm(npc, "actor base");
 			logger::debug("Lobby: created actor base {:08X}; copied faceNPC={:08X} outfit={:08X} containerItems={}",
 				npc->GetFormID(), npc->faceNPC ? npc->faceNPC->GetFormID() : 0,
 				npc->defaultOutfit ? npc->defaultOutfit->GetFormID() : 0, npc->numContainerObjects);
-
-			if (npc->GetFormID() == 0) {
-				for (RE::FormID id = 0xFFFFF000; id < 0xFFFFFFF0; ++id) {
-					if (!RE::TESForm::LookupByID(id)) {
-						npc->SetFormID(id, false);
-						break;
-					}
-				}
-				logger::debug("Lobby: assigned formID {:08X}", npc->GetFormID());
-			}
 
 			// The face is generated from GetRootFaceNPC(); a copied faceNPC would
 			// point back at the lobby player (a default Nord).
@@ -508,7 +446,7 @@ namespace charselect::lobby
 				}
 				a_actor->AddSpell(spell);
 				equip->EquipSpell(a_actor, spell, HandSlot(item.hand));
-				logger::info("Lobby:     spell '{}' in the {} hand", item.name, item.hand);
+				logger::debug("Lobby:     spell '{}' in the {} hand", item.name, item.hand);
 			}
 			return equipped;
 		}
@@ -563,8 +501,7 @@ namespace charselect::lobby
 			light->data.nearDistance = 5.0f;
 			light->fade = 1.8f;  // intensity
 			g_lightBase = light;
-			NoteRuntimeForm(light, "light base");
-			logger::info("Lobby: created highlight light form {:08X}", light->GetFormID());
+			logger::debug("Lobby: created highlight light form {:08X}", light->GetFormID());
 			return light;
 		}
 
@@ -607,7 +544,6 @@ namespace charselect::lobby
 			ref->SetPosition(pos);
 			ref->Enable(false);
 			g_light = ref->CreateRefHandle();
-			NoteRuntimeForm(ref.get(), "light reference");
 			g_highlighted = a_index;
 			logger::debug("Lobby: highlight light {:08X} on slot {} at ({:.0f}, {:.0f}, {:.0f})", ref->GetFormID(), a_index + 1, pos.x, pos.y, pos.z);
 		}
@@ -698,12 +634,10 @@ namespace charselect::lobby
 			}
 			slot.finished = true;
 			logger::info("Lobby: slot {} '{}' ready ({:08X})", a_index + 1, slot.data.name, actor->GetFormID());
-			if (!slot.placeholder) {
-				const auto who = std::format("slot {} '{}' ready", a_index + 1, slot.data.name);
-				appearance::CheckPreset(who, slot.data.characterId, slot.npc);
-				appearance::Log3D(who, actor);
-			}
 			MaybeReveal();
+			if (!slot.placeholder) {
+				appearance::Log3D(std::format("slot {} '{}' ready", a_index + 1, slot.data.name), actor);
+			}
 		}
 
 		void WaitFor3D(std::uint32_t a_generation, std::size_t a_index, int a_attempt)
@@ -728,10 +662,7 @@ namespace charselect::lobby
 			}
 			PlaceSlot(actor, slot);
 			const auto equipped = EquipWorn(actor, slot);
-			logger::info("Lobby: slot {} 3D loaded; equipped {}/{} worn items", a_index + 1, equipped, slot.data.worn.size());
-			if (!slot.placeholder) {
-				appearance::Log3D(std::format("slot {} '{}' 3D loaded", a_index + 1, slot.data.name), actor);
-			}
+			logger::debug("Lobby: slot {} 3D loaded; equipped {}/{} worn items", a_index + 1, equipped, slot.data.worn.size());
 			RunAfter(kFreezeDelay, [a_generation, a_index]() { FreezeSlot(a_generation, a_index); });
 		}
 
@@ -783,9 +714,8 @@ namespace charselect::lobby
 			if (!slot.placeholder) {
 				appearance::LogRecord(std::format("slot {} '{}' after LoadCharacterEx", a_index + 1, slot.data.name), slot.npc);
 				AddMissingParts(a_index, slot);
-				const auto who = std::format("slot {} '{}' with missing parts added", a_index + 1, slot.data.name);
-				appearance::LogRecord(who, slot.npc);
-				appearance::CheckPreset(who, slot.data.characterId, slot.npc);
+				appearance::CheckPreset(std::format("slot {} '{}' with missing parts added", a_index + 1, slot.data.name),
+					slot.data.characterId, slot.npc);
 			}
 			actor->Enable(false);
 			// AI on from the first frame, so its idle is running long before
@@ -818,7 +748,7 @@ namespace charselect::lobby
 				return;
 			}
 			if (furniture) {
-				logger::info("Lobby: slot {} furniture {:08X} 3D {} after {} ms", a_index + 1, furniture->GetFormID(),
+				logger::debug("Lobby: slot {} furniture {:08X} 3D {} after {} ms", a_index + 1, furniture->GetFormID(),
 					furniture->Is3DLoaded() ? "loaded" : "still not loaded", a_attempt * kReadyPollInterval.count());
 			}
 			if (player) {
@@ -844,7 +774,6 @@ namespace charselect::lobby
 				FinishSlotFailed(a_index, "PlaceObjectAtMe failed");
 				return;
 			}
-			NoteRuntimeForm(actor, "actor");
 			// Hidden until the preset is applied, so the head is built from it.
 			actor->Disable();
 			auto* excluded = RE::TESDataHandler::GetSingleton()->LookupForm<RE::TESFaction>(kBardAudienceExcludedFaction, "Skyrim.esm");
@@ -859,7 +788,7 @@ namespace charselect::lobby
 				std::scoped_lock lock(g_lock);
 				slot.view.ref = actor->CreateRefHandle();
 			}
-			logger::info("Lobby: slot {} '{}' placed as {:08X} (base {:08X}) at ({:.0f}, {:.0f}, {:.0f}){}", a_index + 1, slot.data.name,
+			logger::debug("Lobby: slot {} '{}' placed as {:08X} (base {:08X}) at ({:.0f}, {:.0f}, {:.0f}){}", a_index + 1, slot.data.name,
 				actor->GetFormID(), slot.npc->GetFormID(), slot.pos.x, slot.pos.y, slot.pos.z, slot.placeholder ? " as a hooded stand-in" : "");
 
 			const auto generation = g_enterGeneration;
@@ -874,12 +803,11 @@ namespace charselect::lobby
 			// LoadCharacterEx points the face tint at the exported DDS; make sure
 			// something is there so a failed export can't render pink.
 			tint::EnsurePlaceholder(slot.data.characterId);
-			appearance::LogRecord(std::format("slot {} '{}' before LoadCharacterEx", a_index + 1, slot.data.name), slot.npc);
 
 			const bool queued = papyrus::CallStatic("CharGen", "LoadCharacterEx",
 				[generation, a_index](const RE::BSScript::Variable& a_result) {
 					const bool ok = a_result.IsBool() && a_result.GetBool();
-					logger::info("Lobby: CharGen.LoadCharacterEx for slot {} returned {}", a_index + 1, ok);
+					logger::debug("Lobby: CharGen.LoadCharacterEx for slot {} returned {}", a_index + 1, ok);
 					QueueTask([generation, a_index, ok]() { OnPresetApplied(generation, a_index, ok); });
 				},
 				static_cast<RE::Actor*>(actor), slot.race, RE::BSFixedString(slot.data.preset), kPresetApplyAll);
@@ -1028,14 +956,13 @@ namespace charselect::lobby
 					logger::error("Lobby: could not place furniture {:08X}", a_base->GetFormID());
 					return {};
 				}
-				NoteRuntimeForm(existing.get(), "placed furniture");
 			}
 			existing->Disable();
 			existing->SetPosition(a_slot.pos);
 			existing->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, a_slot.heading });
 			existing->Enable(false);
 			a_slot.placedFurniture = existing->CreateRefHandle();
-			logger::info("Lobby: placed furniture {:08X} (base {:08X}) at ({:.0f}, {:.0f}, {:.0f}) heading {:.2f}", existing->GetFormID(),
+			logger::debug("Lobby: placed furniture {:08X} (base {:08X}) at ({:.0f}, {:.0f}, {:.0f}) heading {:.2f}", existing->GetFormID(),
 				a_base->GetFormID(), a_slot.pos.x, a_slot.pos.y, a_slot.pos.z, a_slot.heading);
 			return a_slot.placedFurniture;
 		}
@@ -1096,13 +1023,13 @@ namespace charselect::lobby
 				g_stage.camera = *saved.camera;
 				g_stage.cameraYaw = saved.cameraYaw;
 				g_stage.cameraPitch = saved.cameraPitch;
-				logger::info("Lobby: using saved camera ({:.0f}, {:.0f}, {:.0f}) yaw {:.2f} pitch {:.2f}",
+				logger::debug("Lobby: using saved camera ({:.0f}, {:.0f}, {:.0f}) yaw {:.2f} pitch {:.2f}",
 					g_stage.camera.x, g_stage.camera.y, g_stage.camera.z, g_stage.cameraYaw, g_stage.cameraPitch);
 			} else {
 				g_stage.camera = g_stage.spawn;
 				g_stage.cameraYaw = g_stage.spawnYaw;
 				g_stage.cameraPitch = kDefaultPitch;
-				logger::info("Lobby: no saved camera for '{}'; using where the player arrived", LayoutKey());
+				logger::debug("Lobby: no saved camera for '{}'; using where the player arrived", LayoutKey());
 			}
 			g_stage.centre = saved.stage ? *saved.stage : ToNi(geometry::RowCentre(ToVec(g_stage.camera), g_stage.cameraYaw));
 
@@ -1136,7 +1063,7 @@ namespace charselect::lobby
 				if (i < saved.slots.size() && saved.slots[i]) {
 					slot.pos = saved.slots[i]->pos;
 					slot.heading = saved.slots[i]->heading;
-					logger::info("Lobby: slot {} using saved spot ({:.0f}, {:.0f}, {:.0f}) heading {:.2f}", i + 1, slot.pos.x, slot.pos.y, slot.pos.z, slot.heading);
+					logger::debug("Lobby: slot {} using saved spot ({:.0f}, {:.0f}, {:.0f}) heading {:.2f}", i + 1, slot.pos.x, slot.pos.y, slot.pos.z, slot.heading);
 					continue;
 				}
 				const auto index = static_cast<std::size_t>(std::ranges::find(unplaced, i) - unplaced.begin());
@@ -1148,7 +1075,7 @@ namespace charselect::lobby
 					slot.pos.z = (std::max)(slot.pos.z, ground);
 				}
 				slot.heading = spot.heading;
-				logger::info("Lobby: slot {} has no saved spot; standing in the row in front of the camera", i + 1);
+				logger::debug("Lobby: slot {} has no saved spot; standing in the row in front of the camera", i + 1);
 			}
 			// Furniture spawned for "place:" values, now that every slot has its spot.
 			for (std::size_t i = 0; i < n && i < saved.poses.size(); ++i) {
@@ -1199,7 +1126,7 @@ namespace charselect::lobby
 					taken.push_back(seat->marker);
 					slot.pos = ToNi(seat->pos);
 					slot.heading = seat->heading;
-					logger::info("Lobby: slot {} waits at seat {} of {:08X}: ({:.0f}, {:.0f}, {:.0f}) heading {:.2f}", i + 1, seat->marker,
+					logger::debug("Lobby: slot {} waits at seat {} of {:08X}: ({:.0f}, {:.0f}, {:.0f}) heading {:.2f}", i + 1, seat->marker,
 						furniture->GetFormID(), slot.pos.x, slot.pos.y, slot.pos.z, slot.heading);
 				} else {
 					logger::warn("Lobby: slot {} furniture {:08X} has no free sit marker (3D loaded: {}); keeping its spot", i + 1,
@@ -1248,7 +1175,7 @@ namespace charselect::lobby
 			if (saved.hour) {
 				if (auto* calendar = RE::Calendar::GetSingleton(); calendar && calendar->gameHour) {
 					calendar->gameHour->value = std::clamp(*saved.hour, 0.0f, 23.99f);
-					logger::info("Lobby: time of day set to {:.2f}", calendar->gameHour->value);
+					logger::debug("Lobby: time of day set to {:.2f}", calendar->gameHour->value);
 				}
 			}
 			if (!saved.weather.empty()) {
@@ -1259,7 +1186,7 @@ namespace charselect::lobby
 				if (weather && sky) {
 					sky->ForceWeather(weather, true);
 					g_weatherForced = true;
-					logger::info("Lobby: weather set to {:08X}", weather->GetFormID());
+					logger::debug("Lobby: weather set to {:08X}", weather->GetFormID());
 				} else {
 					logger::warn("Lobby: weather '{}' is not a loaded weather; keeping the game's", saved.weather);
 				}
@@ -1331,7 +1258,7 @@ namespace charselect::lobby
 			StageLobby(player);
 		}
 
-		// L1: notifications mods send while starting up in the lobby go to the
+		// Notifications mods send while starting up in the lobby go to the
 		// hidden HUD, where they normally play out unseen (its queue runs per
 		// frame). Anything still queued when PLAY loads a save would show in
 		// the real game, so clear it, and log how many there were.
@@ -1345,14 +1272,14 @@ namespace charselect::lobby
 				const bool   found = movie && (movie->GetVariable(&queue, "_root.HUDMovieBaseInstance.MessagesInstance.MessageArray") ||
                                              movie->GetVariable(&queue, "_root.HUDMovieBaseInstance.MessagesBlock.MessagesInstance.MessageArray"));
 				if (!found || !queue.IsArray()) {
-					logger::info("Lobby: HUD notification queue not found; nothing cleared");
+					logger::debug("Lobby: HUD notification queue not found; nothing cleared");
 					return;
 				}
 				const auto queued = queue.GetArraySize();
 				if (queued > 0) {
 					queue.ClearElements();
 				}
-				logger::info("Lobby: {} HUD notifications from the lobby were still queued{}", queued, queued > 0 ? "; cleared" : "");
+				logger::debug("Lobby: {} HUD notifications from the lobby were still queued{}", queued, queued > 0 ? "; cleared" : "");
 			});
 		}
 
@@ -1434,7 +1361,7 @@ namespace charselect::lobby
 					WatchLoadStart(a_generation);
 					return;
 				case rules::LoadWatch::kResume:
-					logger::error("Lobby: the load never started; back to the select screen");
+					logger::warn("Lobby: the load never started; back to the select screen");
 					ResumeLobby();
 					return;
 				}
@@ -1467,7 +1394,7 @@ namespace charselect::lobby
 
 			auto load = [file = std::move(a_file), generation = g_enterGeneration]() {
 				// ClearPresets is a Papyrus round trip: by now the watchdog may
-				// have resumed the lobby, or another PLAY may have started (L2).
+				// have resumed the lobby, or another PLAY may have started.
 				if (generation != g_enterGeneration || g_state != State::kLoadingSave) {
 					logger::info("Lobby: not loading {}: the lobby moved on while RaceMenu cleared its presets", file);
 					return;
@@ -1484,7 +1411,7 @@ namespace charselect::lobby
 				// menu, which looped with the lobby re-entering. So it reads as
 				// "mods already checked, go ahead": the game's own load menu
 				// passes true after the player accepts its prompt.
-				logger::info("Lobby: BGSSaveLoadManager::Load('{}', true)", file);
+				logger::debug("Lobby: BGSSaveLoadManager::Load('{}', true)", file);
 				// Outside GameLock: PreLoadGame follows on the main thread and
 				// takes it (see QueueTaskUnlocked).
 				QueueTaskUnlocked([manager, file]() { manager->Load(file.c_str(), true); });
@@ -1815,7 +1742,7 @@ namespace charselect::lobby
 				// Seated somewhere it no longer belongs (another seat picked, or
 				// a standing pose): out, over to the new spot, and into its pose
 				// once out, rather than walking across the room.
-				logger::info("Lobby: slot {} leaves its seat for ({:.0f}, {:.0f}, {:.0f})", a_index + 1, slot.pos.x, slot.pos.y, slot.pos.z);
+				logger::debug("Lobby: slot {} leaves its seat for ({:.0f}, {:.0f}, {:.0f})", a_index + 1, slot.pos.x, slot.pos.y, slot.pos.z);
 				actor->StopInteractingQuick(false);
 				actor->SetPosition(slot.pos, true);
 				actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, slot.heading });
@@ -1837,7 +1764,7 @@ namespace charselect::lobby
 			return;
 		}
 		auto* player = RE::PlayerCharacter::GetSingleton();
-		logger::info("Lobby: recomputing layout");
+		logger::debug("Lobby: recomputing layout");
 		ComputeLayout(player ? player->GetParentCell() : nullptr);
 		PlacePlayer();
 		for (std::size_t i = 0; i < g_slots.size(); ++i) {
@@ -2024,7 +1951,7 @@ namespace charselect::lobby
 	void ClearPresets(std::function<void()> a_then)
 	{
 		const bool queued = papyrus::CallStatic("CharGen", "ClearPresets", [a_then](const RE::BSScript::Variable&) {
-			logger::info("Lobby: CharGen.ClearPresets done");
+			logger::debug("Lobby: CharGen.ClearPresets done");
 			if (a_then) {
 				QueueTask(a_then);
 			}
@@ -2040,7 +1967,7 @@ namespace charselect::lobby
 		if (std::exchange(g_weatherForced, false)) {
 			if (auto* sky = RE::Sky::GetSingleton()) {
 				sky->ReleaseWeatherOverride();
-				logger::info("Lobby: forced weather released");
+				logger::debug("Lobby: forced weather released");
 			}
 		}
 		if (g_hudHidden) {
@@ -2135,19 +2062,10 @@ namespace charselect::lobby
 		g_loadAttempt.Clear();
 	}
 
-	void NoteRuntimeForm(const RE::TESForm* a_form, std::string_view a_kind)
-	{
-		if (a_form) {
-			g_runtimeForms.push_back({ a_form->GetFormID(), a_form, a_form->GetFormType(), std::string(a_kind) });
-		}
-	}
-
 	void OnMainMenuOpened()
 	{
 		// Always: a failed lobby is Idle but may have left saving blocked.
 		Teardown();
-		// Kept: the engine may only free them once the next game starts.
-		ReportRuntimeForms("the main menu opened", false);
 		if (!rules::ShouldResetOnMainMenu(g_state)) {
 			return;
 		}
@@ -2157,9 +2075,6 @@ namespace charselect::lobby
 
 	void OnPostLoadGame(bool a_success)
 	{
-		if (a_success) {
-			ReportRuntimeForms("a load", true);
-		}
 		switch (rules::OnPostLoadGame(g_state, a_success)) {
 		case rules::PostLoad::kIgnore:
 			return;

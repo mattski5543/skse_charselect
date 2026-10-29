@@ -158,7 +158,7 @@ TEST_CASE("ReadSaveHeader converts the game's code page to UTF-8", "[saves]")
 	CHECK(western->playerName == "Bj\xC3\xB6rn");
 	CHECK(western->playerLocation == "\xE2\x82\xAC \xC5\x93");
 
-	// The same bytes from a Russian game (Windows-1251) are Cyrillic (review L11).
+	// The same bytes from a Russian game (Windows-1251) are Cyrillic.
 	const auto russian = ReadSaveHeader(dir / "a.ess", error, 1251);
 	REQUIRE(russian);
 	CHECK(russian->playerName == "Bj\xD1\x86rn");  // 0xF6 is "ц" in 1251
@@ -333,7 +333,7 @@ TEST_CASE("ScanSaveDirectory on an empty folder", "[saves]")
 	CHECK(result.filesSeen == 0);
 }
 
-TEST_CASE("ScanSaveDirectory copes with names the ANSI code page can't hold (review M4)", "[saves]")
+TEST_CASE("ScanSaveDirectory copes with names the ANSI code page can't hold", "[saves]")
 {
 	// path::string() throws for these on a Western system, which crashed the
 	// game at startup (the save scan runs at DataLoaded).

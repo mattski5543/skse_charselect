@@ -30,7 +30,7 @@ namespace
 	Kind KindOf(const Context& a_ctx, Device a_device, std::uint32_t a_key) { return Route(a_ctx, a_device, a_key).kind; }
 }
 
-TEST_CASE("Typing in the console never reaches the lobby (review M3)", "[input]")
+TEST_CASE("Typing in the console never reaches the lobby", "[input]")
 {
 	// The console stays enabled in the lobby; "help" + Enter mapped E and
 	// Enter to PLAY.

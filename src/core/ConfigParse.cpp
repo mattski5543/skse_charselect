@@ -54,19 +54,14 @@ namespace charselect::config
 					a_settings.replaceMainMenu = ParseBool(value);
 				} else if (id == "general.ilobbyhotkey") {
 					a_settings.lobbyHotkey = static_cast<std::uint32_t>(std::stoul(value, nullptr, 0));
-				} else if (id == "general.bsuppressstartupquests") {
-					// Removed (it broke mods, and it changed quest state in memory).
-					a_log.infos.push_back("Config: bSuppressStartupQuests is no longer supported; ignored");
+				} else if (id == "general.bdebuglog") {
+					a_settings.debugLog = ParseBool(value);
 				} else if (id == "lobby.slobbycell") {
 					a_settings.lobbyCell = value;
 				} else if (id == "lobby.sfallbackcell") {
 					a_settings.fallbackCell = value;
 				} else if (id == "lobby.imaxcharacters") {
 					a_settings.maxCharacters = std::clamp<std::size_t>(std::stoul(value), 1, 9);
-				} else if (id == "lobby.fringradius" || id == "lobby.farcdegrees" || id == "lobby.fcameradistance" || id == "lobby.fcamerapitch") {
-					// Removed: every cell ships with a layout, and anything it doesn't
-					// place stands in a row in front of the camera.
-					a_log.infos.push_back(std::format("Config: [{}] {} is no longer used; ignored", section, key));
 				} else if (id == "lobby.sstandinoutfit") {
 					a_settings.standInOutfit.clear();
 					std::string_view rest = value;

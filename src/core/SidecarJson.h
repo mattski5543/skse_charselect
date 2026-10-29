@@ -30,18 +30,12 @@ namespace charselect::sidecar
 
 		int                      version{ kVersion };
 		std::uint32_t            characterId{ 0 };
-		std::string              saveName;  // save the capture came from (no extension)
-		std::int64_t             capturedAt{ 0 };  // unix seconds
 		std::string              name;
-		std::uint32_t            level{ 0 };
 		FormRef                  race;
 		bool                     female{ false };
-		float                    weight{ 0.0f };
-		float                    height{ 1.0f };
 		std::string              preset;  // RaceMenu preset name, empty if never exported
 		std::vector<FormRef>     worn;    // a weapon held in both hands is listed once per hand
 		std::vector<FormRef>     spells;  // spells in hand (not powers or shouts)
-		std::vector<std::string> plugins;  // load order at capture time
 
 		bool operator==(const Sidecar&) const = default;
 	};

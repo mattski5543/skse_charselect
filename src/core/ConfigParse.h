@@ -16,6 +16,7 @@ namespace charselect::config
 		// [General]
 		bool          replaceMainMenu{ true };  // show the select screen instead of the vanilla main menu
 		std::uint32_t lobbyHotkey{ 0x41 };      // F7: enter the lobby from the vanilla main menu
+		bool          debugLog{ false };        // detailed CharSelect.log for reporting a problem
 
 		// [Lobby]
 		std::string lobbyCell{ "WhiterunBanneredMare" };

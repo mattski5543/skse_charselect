@@ -57,7 +57,6 @@ namespace charselect::poses
 		{
 			if (!g_doNothing) {
 				g_doNothing = RE::TESPackage::CreatePackage(RE::PACKAGE_TYPE::kDoNothing);
-				lobby::NoteRuntimeForm(g_doNothing, "package");
 				if (g_doNothing) {
 					// No conversations, greetings or idle chatter: with these on
 					// (vanilla DoNothing has them all) the characters talk and
@@ -67,7 +66,7 @@ namespace charselect::poses
 					g_doNothing->packData.foBehaviorFlags.reset(Flag::kHellosToPlayer, Flag::kRandomConversations, Flag::kAllowIdleChatter,
 						Flag::kWorldInteractions, Flag::kReactionToPlayerActions, Flag::kGreetCorpseBehaviour, Flag::kFriendlyFireComments);
 				}
-				logger::info("Poses: created do-nothing package {:08X} (behavior flags {:04X})", g_doNothing ? g_doNothing->GetFormID() : 0,
+				logger::debug("Poses: created do-nothing package {:08X} (behavior flags {:04X})", g_doNothing ? g_doNothing->GetFormID() : 0,
 					g_doNothing ? g_doNothing->packData.foBehaviorFlags.underlying() : 0);
 			}
 			return g_doNothing;
@@ -220,7 +219,7 @@ namespace charselect::poses
 			}
 			const auto& event = p->current.event;
 			const bool  ok = actor->NotifyAnimationGraph(RE::BSFixedString(event));
-			logger::info("Poses: slot {} graph event '{}' -> {} (try {})", a_index + 1, event, ok ? "accepted" : "rejected", a_try + 1);
+			logger::debug("Poses: slot {} graph event '{}' -> {} (try {})", a_index + 1, event, ok ? "accepted" : "rejected", a_try + 1);
 			if (!ok && a_try + 1 < kEventTries) {
 				RunAfter(kEventRetryDelay, [a_epoch, a_index, a_token, a_try]() { SendPoseEvent(a_epoch, a_index, a_token, a_try + 1); });
 			}
@@ -243,7 +242,7 @@ namespace charselect::poses
 			}
 			if (pose.weaponDrawn) {
 				actor->DrawWeaponMagicHands(true);
-				logger::info("Poses: slot {} drawing weapon", a_index + 1);
+				logger::debug("Poses: slot {} drawing weapon", a_index + 1);
 			}
 			if (!pose.event.empty()) {
 				const auto epoch = g_epoch;
@@ -254,7 +253,7 @@ namespace charselect::poses
 					SendPoseEvent(epoch, a_index, token, 0);
 				}
 			}
-			logger::info("Poses: slot {} in pose '{}' ({})", a_index + 1, pose.name, Describe(actor));
+			logger::debug("Poses: slot {} in pose '{}' ({})", a_index + 1, pose.name, Describe(actor));
 		}
 
 		void PollSit(std::uint32_t a_epoch, std::size_t a_index, std::uint32_t a_token, int a_poll)
@@ -265,7 +264,7 @@ namespace charselect::poses
 				return;
 			}
 			if (InPlace(actor, p->furniture, p->current)) {
-				logger::info("Poses: slot {} {} after {} ms", a_index + 1, p->current.sleep ? "asleep" : "seated", a_poll * kPollInterval.count());
+				logger::debug("Poses: slot {} {} after {} ms", a_index + 1, p->current.sleep ? "asleep" : "seated", a_poll * kPollInterval.count());
 				Finish(a_index, true);
 				return;
 			}
@@ -275,7 +274,7 @@ namespace charselect::poses
 				logger::warn("Poses: slot {} not sitting under the sit package ({}); AI reset", a_index + 1, Describe(actor));
 				actor->EvaluatePackage(true, true);
 				const bool ok = furniture->ActivateRef(actor, 0, nullptr, 1, false);
-				logger::warn("Poses: slot {} activating the furniture -> {}", a_index + 1, ok);
+				logger::debug("Poses: slot {} activating the furniture -> {}", a_index + 1, ok);
 			}
 			if (a_poll == kSitIdlePoll && state == RE::SIT_SLEEP_STATE::kNormal && furniture && !p->current.sleep) {
 				auto*      idle = RE::TESDataHandler::GetSingleton()->LookupForm<RE::TESIdleForm>(kEnterChairInstant, "Skyrim.esm");
@@ -286,7 +285,7 @@ namespace charselect::poses
 			if (a_poll >= kSitGiveUpPoll) {
 				// Don't leave it stuck wherever it got to: back on its spot,
 				// standing, facing the camera.
-				logger::error("Poses: slot {} never got into its furniture ({}); standing on its spot instead", a_index + 1, Describe(actor));
+				logger::warn("Poses: slot {} never got into its furniture ({}); standing on its spot instead", a_index + 1, Describe(actor));
 				p->current = Pose{ "stand" };
 				p->busy = false;
 				SetTopPackage(actor->GetActorBase(), DoNothingPackage());
@@ -308,7 +307,7 @@ namespace charselect::poses
 					state == RE::SIT_SLEEP_STATE::kWantToSleep || state == RE::SIT_SLEEP_STATE::kWaitingForSleepAnim) &&
 				a_actor->GetOccupiedFurniture() == p.furniture) {
 				// Already on its way into this furniture (AI has been on since it was enabled).
-				logger::info("Poses: slot {} already sitting down ({})", a_index + 1, Describe(a_actor));
+				logger::debug("Poses: slot {} already sitting down ({})", a_index + 1, Describe(a_actor));
 				const auto epoch = g_epoch;
 				const auto token = p.token;
 				RunAfter(kPollInterval, [epoch, a_index, token]() { PollSit(epoch, a_index, token, 1); });
@@ -322,7 +321,7 @@ namespace charselect::poses
 			// With an AI reset: after the engine has taken an actor out of its
 			// seat, package evaluation alone did nothing for ~3 s (0.4.0).
 			a_actor->EvaluatePackage(true, true);
-			logger::info("Poses: slot {} sitting down ({})", a_index + 1, Describe(a_actor));
+			logger::debug("Poses: slot {} sitting down ({})", a_index + 1, Describe(a_actor));
 			const auto epoch = g_epoch;
 			const auto token = p.token;
 			RunAfter(kPollInterval, [epoch, a_index, token]() { PollSit(epoch, a_index, token, 1); });
@@ -337,7 +336,7 @@ namespace charselect::poses
 			}
 			const auto state = SitState(actor);
 			if (state == RE::SIT_SLEEP_STATE::kNormal) {
-				logger::info("Poses: slot {} standing after {} ms", a_index + 1, a_poll * kPollInterval.count());
+				logger::debug("Poses: slot {} standing after {} ms", a_index + 1, a_poll * kPollInterval.count());
 				// Make sure the do-nothing package is what runs now.
 				actor->EvaluatePackage(true, RunningForeignPackage(actor));
 				Finish(a_index, true);
@@ -348,7 +347,7 @@ namespace charselect::poses
 				actor->StopInteractingQuick(false);
 			}
 			if (a_poll >= kStandGiveUpPoll) {
-				logger::error("Poses: slot {} never stood up ({})", a_index + 1, Describe(actor));
+				logger::warn("Poses: slot {} never stood up ({})", a_index + 1, Describe(actor));
 				Finish(a_index, false);
 				return;
 			}
@@ -364,7 +363,7 @@ namespace charselect::poses
 			// exit animation should.
 			SetTopPackage(a_actor->GetActorBase(), DoNothingPackage());
 			const bool exitOk = a_actor->NotifyAnimationGraph("IdleChairExitStart");
-			logger::info("Poses: slot {} standing up, exit event {} ({})", a_index + 1, exitOk ? "accepted" : "rejected", Describe(a_actor));
+			logger::debug("Poses: slot {} standing up, exit event {} ({})", a_index + 1, exitOk ? "accepted" : "rejected", Describe(a_actor));
 			const auto epoch = g_epoch;
 			const auto token = p.token;
 			RunAfter(kPollInterval, [epoch, a_index, token]() { PollStand(epoch, a_index, token, 1); });
@@ -381,7 +380,7 @@ namespace charselect::poses
 			const Pose previous = std::exchange(p->current, a_pose);
 			const bool inFurniture = SitState(actor) != RE::SIT_SLEEP_STATE::kNormal;
 			const bool wantSit = a_pose.sit && p->furniture.get() && FurniturePackage(a_pose);
-			logger::info("Poses: slot {} '{}' -> '{}' ({})", a_index + 1, previous.name, a_pose.name, a_why);
+			logger::debug("Poses: slot {} '{}' -> '{}' ({})", a_index + 1, previous.name, a_pose.name, a_why);
 			if (a_pose.sit && !wantSit) {
 				logger::warn("Poses: slot {} pose '{}' needs furniture (slot{}furniture); standing instead", a_index + 1, a_pose.name, a_index + 1);
 			}
@@ -392,7 +391,7 @@ namespace charselect::poses
 			// End a standing idle loop; seated ones end with getting up.
 			if (!inFurniture && !previous.sit && !previous.event.empty() && previous.event != a_pose.event) {
 				const bool ok = actor->NotifyAnimationGraph("IdleStop");
-				logger::info("Poses: slot {} graph event 'IdleStop' -> {}", a_index + 1, ok ? "accepted" : "rejected");
+				logger::debug("Poses: slot {} graph event 'IdleStop' -> {}", a_index + 1, ok ? "accepted" : "rejected");
 			}
 
 			if (wantSit) {
@@ -527,7 +526,7 @@ namespace charselect::poses
 		p.rest = std::move(a_rest);
 		p.select = std::move(a_select);
 		auto furniture = a_furniture.get();
-		logger::info("Poses: slot {} rest '{}' select '{}' furniture {:08X}", a_index + 1, p.rest.name, p.select ? p.select->name : "-",
+		logger::debug("Poses: slot {} rest '{}' select '{}' furniture {:08X}", a_index + 1, p.rest.name, p.select ? p.select->name : "-",
 			furniture ? furniture->GetFormID() : 0);
 	}
 
@@ -546,7 +545,7 @@ namespace charselect::poses
 		}
 		p->started = true;
 		p->current = Pose{ "stand" };
-		logger::info("Poses: slot {} AI on ({})", a_index + 1, Describe(actor));
+		logger::debug("Poses: slot {} AI on ({})", a_index + 1, Describe(actor));
 		Apply(a_index, Wanted(a_index), "start");
 		if (!g_watching) {
 			g_watching = true;
@@ -593,7 +592,7 @@ namespace charselect::poses
 				continue;
 			}
 			const auto pos = actor->GetPosition();
-			logger::info("Poses: {}: slot {} pose '{}' busy={} at ({:.0f}, {:.0f}, {:.0f}) {:.0f} from home; {}", a_when, i + 1, p.current.name,
+			logger::debug("Poses: {}: slot {} pose '{}' busy={} at ({:.0f}, {:.0f}, {:.0f}) {:.0f} from home; {}", a_when, i + 1, p.current.name,
 				p.busy, pos.x, pos.y, pos.z, pos.GetDistance(p.home), Describe(actor));
 		}
 	}

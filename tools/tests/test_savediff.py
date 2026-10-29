@@ -359,7 +359,7 @@ class ReportTests(unittest.TestCase):
         self.assertRegex(out, r"SKEE / MORP v3\s+A\s+100 B\s+B\s+284 B\s+\(\+184 B\)")
 
     def test_a_replaced_form_of_the_same_type_shows(self):
-        # Same counts and sizes: only the form IDs differ (review L16).
+        # Same counts and sizes: only the form IDs differ.
         a = ess_bytes(changes=(("ACHR", 20, 0x000100),))
         b = ess_bytes(changes=(("ACHR", 20, 0xFF0801),))
         out = run(savediff.compare, *self.pair(a, b))

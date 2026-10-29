@@ -40,7 +40,7 @@ namespace charselect::tint
 			const std::string_view type = rtti && rtti->GetName() ? rtti->GetName() : "";
 			if (type != "NiSourceTexture" && type != "NiRenderedTexture" && type != "BSRenderedTexture") {
 				if (a_texture) {
-					logger::info("Tint: texture of type '{}' skipped", type);
+					logger::debug("Tint: texture of type '{}' skipped", type);
 				}
 				return nullptr;
 			}
@@ -106,7 +106,7 @@ namespace charselect::tint
 			REX::W32::D3D11_TEXTURE2D_DESC d{};
 			auto*                          d3d = D3DTexture(texture.get(), d);
 			const bool                     target = d3d && (d.bindFlags & REX::W32::D3D11_BIND_RENDER_TARGET);
-			logger::info("Tint: {}: face {} slot: {}", id, slot,
+			logger::debug("Tint: {}: face {} slot: {}", id, slot,
 				!texture ? "empty" : !d3d ? "no 2D texture" : std::format("{}x{} format {} mips {} {}", d.width, d.height, static_cast<int>(d.format), d.mipLevels, target ? "render target" : "loaded"));
 			if (target && (!source || !(desc.bindFlags & REX::W32::D3D11_BIND_RENDER_TARGET))) {
 				// A render target beats the tint-slot fallback.
@@ -123,7 +123,7 @@ namespace charselect::tint
 			}
 		}
 		if (source) {
-			logger::info("Tint: {}: using the {} texture", id, (desc.bindFlags & REX::W32::D3D11_BIND_RENDER_TARGET) ? "render-target" : "uncompressed tint-slot");
+			logger::debug("Tint: {}: using the {} texture", id, (desc.bindFlags & REX::W32::D3D11_BIND_RENDER_TARGET) ? "render-target" : "uncompressed tint-slot");
 		}
 		if (!source) {
 			logger::warn("Tint: {}: no rendered tint mask on the face", id);
@@ -221,7 +221,7 @@ namespace charselect::tint
 			logger::error("Tint: cannot write placeholder {}", text::PathUtf8(path));
 			return;
 		}
-		logger::warn("Tint: no RaceMenu tint export for {}; wrote a flat skin-tone placeholder #{:06X} at {}",
+		logger::info("Tint: no RaceMenu tint export for {}; wrote a flat skin-tone placeholder #{:06X} at {}",
 			paths::PresetName(a_characterId), argb & 0x00FFFFFF, text::PathUtf8(path));
 	}
 }

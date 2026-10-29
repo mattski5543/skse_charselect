@@ -52,32 +52,31 @@ namespace
 		return { static_cast<const char*>(a_msg->data), a_msg->dataLen };
 	}
 
-	// Phase 1: log every character and their saves, newest first.
+	// Debug log: every character, their saves and what CharSelect has kept
+	// of them, at startup. Off the game's threads: on a cold hard drive with
+	// thousands of saves the scan can take seconds. The save folder comes from
+	// the game's INI settings, so it's read here first.
 	void LogSaveIndex()
 	{
-		// Diagnostics only, so off the main thread: on a cold hard drive with
-		// thousands of saves the scan can take seconds. The save
-		// folder comes from the game's INI settings, so it's read here first.
 		const auto dir = charselect::paths::SaveDir();
-		if (!dir) {
+		if (!dir || !spdlog::should_log(spdlog::level::debug)) {
 			return;
 		}
 		std::thread([dir = *dir]() {
 			charselect::Guarded("Save index", [&]() {
-				logger::info("Save index: scanning {}", charselect::text::PathUtf8(dir));
 				const auto result = charselect::ScanSaveDirectory(dir);
-				logger::info("Save index: {} .ess files, {} characters, {} skipped, {:.1f} ms",
+				logger::debug("Save index: {} .ess files, {} characters, {} skipped, {:.1f} ms",
 					result.filesSeen, result.characters.size(), result.failures.size(), result.elapsedMs);
 				for (const auto& c : result.characters) {
 					const auto& h = c.Latest().header;
 					const bool  hasSidecar = std::filesystem::exists(charselect::paths::SidecarPath(c.characterId).value_or(""));
 					const bool  hasPreset = std::filesystem::exists(charselect::paths::PresetPath(c.characterId));
-					logger::info("Character {} '{}' lvl {} {} {} - {} saves, last {} (sidecar={}, preset={})",
+					logger::debug("Character {} '{}' lvl {} {} {} - {} saves, last {} (sidecar={}, preset={})",
 						charselect::FormatCharacterId(c.characterId), h.playerName, h.playerLevel, h.raceEditorId,
 						h.playerSex ? "female" : "male", c.saves.size(), charselect::FormatFileTime(h.fileTime), hasSidecar, hasPreset);
 				}
 				for (const auto& f : result.failures) {
-					logger::info("Save index: skipped {}: {}", charselect::text::PathUtf8(f.path.filename()), f.reason);
+					logger::debug("Save index: skipped {}: {}", charselect::text::PathUtf8(f.path.filename()), f.reason);
 				}
 			});
 		}).detach();
@@ -169,8 +168,9 @@ namespace
 		}
 		auto log = std::make_shared<spdlog::logger>("global"s, std::move(sink));
 
-		// Logs are our only debugger: log everything and flush every line so a
-		// crash never eats the last messages.
+		// Everything until the settings are read (bDebugLog, see
+		// SKSEPluginLoad), and every line flushed so a crash never eats the
+		// last messages.
 		log->set_level(spdlog::level::trace);
 		log->flush_on(spdlog::level::trace);
 
@@ -197,7 +197,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	const auto version = plugin->GetVersion();
 
 	InitializeLog(name);
-	logger::info("hello");
 	logger::info("{} v{} loading", name, version.string("."sv));
 
 	// log = false: by default SKSE::Init sets up its own logger, which reopens
@@ -210,13 +209,15 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 		(skseVersion >> 24) & 0xFF, (skseVersion >> 16) & 0xFF, (skseVersion >> 4) & 0xFFF);
 
 	charselect::config::Load();
+	// The normal log has what a bug report needs; bDebugLog adds the detail.
+	spdlog::default_logger()->set_level(charselect::config::Get().debugLog ? spdlog::level::trace : spdlog::level::info);
 
 	const auto messaging = SKSE::GetMessagingInterface();
 	if (!messaging || !messaging->RegisterListener(OnSKSEMessage)) {
 		logger::critical("Failed to register SKSE messaging listener");
 		return false;
 	}
-	logger::info("Registered SKSE messaging listener");
+	logger::debug("Registered SKSE messaging listener");
 
 	logger::info("{} loaded", name);
 	return true;

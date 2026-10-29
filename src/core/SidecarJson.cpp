@@ -48,18 +48,12 @@ namespace charselect::sidecar
 		return {
 			{ "version", a_s.version },
 			{ "characterId", FormatCharacterId(a_s.characterId) },
-			{ "saveName", a_s.saveName },
-			{ "capturedAt", a_s.capturedAt },
 			{ "name", a_s.name },
-			{ "level", a_s.level },
 			{ "race", ToJson(a_s.race) },
 			{ "female", a_s.female },
-			{ "weight", a_s.weight },
-			{ "height", a_s.height },
 			{ "preset", a_s.preset },
 			{ "worn", ToJson(a_s.worn) },
 			{ "spells", ToJson(a_s.spells) },
-			{ "plugins", a_s.plugins },
 		};
 	}
 
@@ -68,16 +62,11 @@ namespace charselect::sidecar
 		Sidecar s;
 		s.version = a_j.value("version", 0);
 		s.characterId = static_cast<std::uint32_t>(std::stoul(a_j.value("characterId", "0"), nullptr, 16));
-		s.saveName = a_j.value("saveName", "");
-		s.capturedAt = a_j.value("capturedAt", std::int64_t{ 0 });
 		s.name = a_j.value("name", "");
-		s.level = a_j.value("level", 0u);
 		if (a_j.contains("race")) {
 			s.race = FormRefFromJson(a_j["race"]);
 		}
 		s.female = a_j.value("female", false);
-		s.weight = a_j.value("weight", 0.0f);
-		s.height = a_j.value("height", 1.0f);
 		s.preset = a_j.value("preset", "");
 		for (const auto& w : a_j.value("worn", json::array())) {
 			s.worn.push_back(FormRefFromJson(w));
@@ -85,7 +74,6 @@ namespace charselect::sidecar
 		for (const auto& sp : a_j.value("spells", json::array())) {
 			s.spells.push_back(FormRefFromJson(sp));
 		}
-		s.plugins = a_j.value("plugins", std::vector<std::string>{});
 		return s;
 	}
 

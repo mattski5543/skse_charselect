@@ -61,6 +61,7 @@ TEST_CASE("The shipped CharSelect.ini parses cleanly and matches the built-in de
 	const Settings d;
 	CHECK(s.replaceMainMenu == d.replaceMainMenu);
 	CHECK(s.lobbyHotkey == d.lobbyHotkey);
+	CHECK(s.debugLog == d.debugLog);
 	CHECK(s.lobbyCell == d.lobbyCell);
 	CHECK(s.fallbackCell == d.fallbackCell);
 	CHECK(s.maxCharacters == d.maxCharacters);
@@ -157,23 +158,11 @@ TEST_CASE("Unknown keys and keys outside their section warn", "[config]")
 	CHECK_THAT(log.warnings[2], ContainsSubstring("unknown key [general] stypo"));
 }
 
-TEST_CASE("The removed automatic-layout settings are ignored with a note", "[config]")
+TEST_CASE("bDebugLog turns on the detailed log", "[config]")
 {
-	ParseLog   log;
-	const auto s = ParseText("[Lobby]\nfRingRadius = 230\nfArcDegrees = 110\nfCameraDistance = 430\nfCameraPitch = 0.12\n", &log);
-	CHECK(log.warnings.empty());
-	REQUIRE(log.infos.size() == 4);
-	CHECK_THAT(log.infos[0], ContainsSubstring("no longer used"));
-	CHECK(s.maxCharacters == 5);
-}
-
-TEST_CASE("The removed quest option is ignored with a note", "[config]")
-{
-	ParseLog log;
-	ParseText("[General]\nbSuppressStartupQuests = 1\n", &log);
-	CHECK(log.warnings.empty());
-	REQUIRE(log.infos.size() == 1);
-	CHECK_THAT(log.infos[0], ContainsSubstring("no longer supported"));
+	CHECK_FALSE(ParseText("").debugLog);
+	CHECK(ParseText("[General]\nbDebugLog = 1\n").debugLog);
+	CHECK_FALSE(ParseText("[General]\nbDebugLog = 0\n").debugLog);
 }
 
 TEST_CASE("Lines that aren't settings are skipped", "[config]")
@@ -215,7 +204,7 @@ TEST_CASE("Windows line endings", "[config]")
 
 TEST_CASE("A UTF-8 BOM before the first section", "[config]")
 {
-	// Review L13: an editor that saves a byte order mark hid the first line
+	// An editor that saves a byte order mark hid the first line
 	// from the parser, and a file starting with a section lost its keys.
 	ParseLog   log;
 	const auto s = ParseText("\xEF\xBB\xBF[General]\nbReplaceMainMenu = 0\n", &log);

@@ -25,7 +25,7 @@ TEST_CASE("Exports are only for the character being played", "[exports]")
 	CHECK_FALSE(t.Begin(kB));
 }
 
-TEST_CASE("A load makes earlier tickets stale (review M1)", "[exports]")
+TEST_CASE("A load makes earlier tickets stale", "[exports]")
 {
 	// Save A in first person (the tint export fails), then load B within
 	// the 3 s before the export is checked.
