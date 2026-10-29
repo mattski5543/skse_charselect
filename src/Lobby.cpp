@@ -13,8 +13,10 @@
 #include "Tint.h"
 #include "Util.h"
 #include "core/Encoding.h"
+#include "core/Files.h"
 #include "core/FormKey.h"
 #include "core/LayoutMath.h"
+#include "core/PresetIds.h"
 
 namespace charselect::lobby
 {
@@ -796,6 +798,40 @@ namespace charselect::lobby
 			}
 		}
 
+		// RaceMenu can't find a light plugin's parts in a saved look once that
+		// plugin's light slot has moved (a mod hair became a race default; see
+		// core/PresetIds.h), so those IDs are rewritten first. Our own file;
+		// the next export writes the slot back in, and this runs every time.
+		void FixPresetIds(std::size_t a_index, const Slot& a_slot)
+		{
+			const auto  path = paths::PresetPath(a_slot.data.characterId);
+			std::string text;
+			{
+				std::ifstream in(path, std::ios::binary);
+				if (!in) {
+					return;
+				}
+				text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+			}
+			auto*      dh = RE::TESDataHandler::GetSingleton();
+			const auto fixes = presetids::FixLightPluginIds(text, [dh](std::string_view a_plugin) {
+				const auto* file = dh ? dh->LookupModByName(a_plugin) : nullptr;
+				return file && file->IsLight();
+			});
+			if (fixes.empty()) {
+				return;
+			}
+			std::string error;
+			if (!files::WriteAtomic(path, text, error)) {
+				logger::warn("Lobby: slot {}: could not rewrite light-plugin IDs in {}: {}", a_index + 1, text::PathUtf8(path.filename()), error);
+				return;
+			}
+			for (const auto& fix : fixes) {
+				logger::info("Lobby: slot {} saved look: {}|{:06X} -> {:06X} (light plugin: the ID without its load-order slot)", a_index + 1,
+					text::ToUtf8(fix.plugin), fix.from, fix.to);
+			}
+		}
+
 		void SpawnSlot(std::size_t a_index, RE::PlayerCharacter* a_player)
 		{
 			auto& slot = g_slots[a_index];
@@ -844,6 +880,7 @@ namespace charselect::lobby
 			// LoadCharacterEx points the face tint at the exported DDS; make sure
 			// something is there so a failed export can't render pink.
 			tint::EnsurePlaceholder(slot.data.characterId);
+			FixPresetIds(a_index, slot);
 			appearance::LogRecord(std::format("slot {} '{}' before LoadCharacterEx", a_index + 1, slot.data.name), slot.npc);
 
 			const bool queued = papyrus::CallStatic("CharGen", "LoadCharacterEx",
