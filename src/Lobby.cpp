@@ -945,9 +945,13 @@ namespace charselect::lobby
 			ForEachLobbyRef([&](RE::TESObjectREFR* a_ref) {
 				auto* actor = a_ref ? a_ref->As<RE::Actor>() : nullptr;
 				if (ShouldHide(actor)) {
+					// With its 3D already in, OnObjectLoaded missed it (could have been
+					// seen); without, the sweep got there before the 3D did.
+					const bool  loaded = actor->Is3DLoaded();
 					actor->Disable();
 					const char* name = actor->GetDisplayFullName();
-					names += std::format("{}{:08X} '{}'", hidden ? ", " : "", actor->GetFormID(), name ? name : "");
+					names += std::format("{}{:08X} '{}' ({})", hidden ? ", " : "", actor->GetFormID(), name ? name : "",
+						loaded ? "3D loaded" : "before its 3D");
 					++hidden;
 				}
 				return RE::BSContainer::ForEachResult::kContinue;
