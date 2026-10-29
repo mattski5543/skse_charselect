@@ -137,6 +137,7 @@ namespace
 
 	void OnSKSEMessage(SKSE::MessagingInterface::Message* a_msg)
 	{
+		std::scoped_lock lock(charselect::GameLock());
 		charselect::Guarded("SKSE message", [&]() { HandleSKSEMessage(a_msg); });
 	}
 

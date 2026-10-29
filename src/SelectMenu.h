@@ -17,7 +17,7 @@
 //
 // Input arrives from the global input sink (Events.cpp) as queued clicks and
 // navigation, and is processed in AdvanceMovie on the UI thread, where the
-// layout and hit regions live. Game actions are handed to the main thread.
+// layout and hit regions live. Game actions are handed on as SKSE tasks.
 
 namespace charselect
 {

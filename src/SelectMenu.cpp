@@ -52,8 +52,9 @@ namespace charselect
 			}
 		};
 
-		// Shared between the main thread (mode changes, input queueing) and the
-		// UI thread (AdvanceMovie). Everything else in this file is UI-thread only.
+		// Shared between the game side (mode changes and input queueing, from
+		// tasks and event sinks) and the UI thread (AdvanceMovie). Everything
+		// else in this file is UI-thread only.
 		struct Shared
 		{
 			std::mutex                    lock;

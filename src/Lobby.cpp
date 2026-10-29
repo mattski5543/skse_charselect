@@ -1485,7 +1485,9 @@ namespace charselect::lobby
 				// "mods already checked, go ahead": the game's own load menu
 				// passes true after the player accepts its prompt.
 				logger::info("Lobby: BGSSaveLoadManager::Load('{}', true)", file);
-				manager->Load(file.c_str(), true);
+				// Outside GameLock: PreLoadGame follows on the main thread and
+				// takes it (see QueueTaskUnlocked).
+				QueueTaskUnlocked([manager, file]() { manager->Load(file.c_str(), true); });
 			};
 			ClearPresets(load);
 		}

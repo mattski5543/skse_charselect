@@ -1,8 +1,8 @@
 #pragma once
 
 // Delayed callbacks, all on one background thread. When one is due it's
-// handed to a dispatcher; the plugin's dispatcher runs it on the game's main
-// thread. (A thread per callback was wasteful: the lobby checks on its
+// handed to a dispatcher; the plugin's dispatcher queues it as an SKSE task
+// (Util.h). (A thread per callback was wasteful: the lobby checks on its
 // characters several times a second.)
 
 #include <chrono>

@@ -1,7 +1,8 @@
 #pragma once
 
-// Small helpers used across the plugin: running code on the game's main
-// thread, delayed callbacks, and catching errors before they reach the game.
+// Small helpers used across the plugin: running game work as SKSE tasks
+// under one lock, delayed callbacks, and catching errors before they reach
+// the game.
 
 #include "core/TimerQueue.h"
 
@@ -22,8 +23,31 @@ namespace charselect
 		}
 	}
 
-	// SKSE tasks, guarded.
+	// One lock for everything that touches CharSelect's game state (the
+	// lobby's slots and performers, ResetGuard's capture, the frontend's
+	// flags). SKSE messages and menu events arrive on the game's main thread
+	// and SKSE tasks run on its worker threads on AE, and logs show them
+	// overlapping, so each of those holds this while it runs. Recursive: a
+	// handler may call code that tasks also run.
+	inline std::recursive_mutex& GameLock()
+	{
+		static std::recursive_mutex lock;
+		return lock;
+	}
+
+	// An SKSE task, guarded and holding GameLock.
 	inline void QueueTask(std::function<void()> a_fn)
+	{
+		SKSE::GetTaskInterface()->AddTask([fn = std::move(a_fn)]() {
+			std::scoped_lock lock(GameLock());
+			Guarded("task", fn);
+		});
+	}
+
+	// An SKSE task without GameLock, for an engine call that may wait for the
+	// main thread, which may itself be waiting for GameLock in an SKSE
+	// message: starting a load (PreLoadGame follows on the main thread).
+	inline void QueueTaskUnlocked(std::function<void()> a_fn)
 	{
 		SKSE::GetTaskInterface()->AddTask([fn = std::move(a_fn)]() { Guarded("task", fn); });
 	}
@@ -41,7 +65,7 @@ namespace charselect
 		return *queue;
 	}
 
-	// Runs a_fn on the main thread (as an SKSE task) after a delay.
+	// Runs a_fn as an SKSE task (QueueTask) after a delay.
 	inline void RunAfter(std::chrono::milliseconds a_delay, std::function<void()> a_fn)
 	{
 		Timers().Post(a_delay, std::move(a_fn));

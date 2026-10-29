@@ -28,7 +28,7 @@ namespace charselect::poses
 	// nullopt quietly.
 	[[nodiscard]] std::optional<Pose> Parse(std::string_view a_text);
 
-	// All of these run on the main thread.
+	// All of these run under GameLock (Util.h), like the lobby's.
 
 	// Forget every performer. a_gameOver: the lobby's game is over (a load
 	// succeeded, the main menu, a new lobby), so the do-nothing package made

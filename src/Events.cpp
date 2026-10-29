@@ -175,6 +175,7 @@ namespace charselect::events
 
 			RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
 			{
+				std::scoped_lock lock(GameLock());
 				Guarded("Menu event", [&]() { Handle(a_event); });
 				return RE::BSEventNotifyControl::kContinue;
 			}

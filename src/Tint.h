@@ -17,6 +17,6 @@ namespace charselect::tint
 
 	// Our own export of the player's rendered face tint (skin tone, makeup,
 	// war paint) to Path(): what RaceMenu's SaveCharacter is meant to write
-	// but never did on the user's setup. Main thread; logs why if it can't.
+	// but never did on the user's setup. Logs why if it can't.
 	bool ExportFromPlayer(std::uint32_t a_characterId);
 }

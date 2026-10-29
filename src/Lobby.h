@@ -51,7 +51,8 @@ namespace charselect::lobby
 	// Cheap per-frame query for the menu: readiness and reference per slot.
 	[[nodiscard]] std::vector<std::pair<bool, RE::ObjectRefHandle>> GetSlotStatus();
 
-	// All of these run on the main thread.
+	// All of these run under GameLock (Util.h): from SKSE messages, menu
+	// events or tasks.
 	void RequestEnter();  // from the main menu; with no characters, the failure handler runs
 	void OnLoadingMenuClosed();
 	void OnPreLoadGame();
@@ -127,11 +128,11 @@ namespace charselect::lobby
 
 	// RaceMenu keeps the lobby faces mapped by actor base pointer and never
 	// clears them on load (its Revert is empty); a recycled pointer in the next
-	// game could pick one up. Clears them, then runs a_then on the main thread.
+	// game could pick one up. Clears them, then runs a_then as a task.
 	void ClearPresets(std::function<void()> a_then = {});
 	// Drops every lobby character's link to their furniture. Call before the
 	// lobby's game is torn down (a load, or back to the main menu): a link
-	// whose target is freed first crashes the engine. Main thread.
+	// whose target is freed first crashes the engine.
 	void UnlinkSeats();
 
 	// Called if the lobby could not be entered, so the frontend can fall back.

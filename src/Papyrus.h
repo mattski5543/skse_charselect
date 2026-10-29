@@ -3,7 +3,7 @@
 // Calling Papyrus static functions (RaceMenu's CharGen) from C++.
 // Calls are queued on the Papyrus VM and complete asynchronously; the
 // callback runs on whatever thread the VM finishes on, so callbacks that
-// touch game state should hop to the main thread with QueueTask (Util.h).
+// touch game state hand it on with QueueTask (Util.h).
 
 #include "Util.h"
 
