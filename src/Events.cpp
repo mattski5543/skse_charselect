@@ -224,6 +224,31 @@ namespace charselect::events
 				return;
 			}
 		};
+
+		// Actors arriving in the lobby (an NPC's schedule bringing them in)
+		// are hidden as soon as their 3D loads, not at the next sweep.
+		class ObjectLoadedSink : public RE::BSTEventSink<RE::TESObjectLoadedEvent>
+		{
+		public:
+			static ObjectLoadedSink* GetSingleton()
+			{
+				static ObjectLoadedSink singleton;
+				return &singleton;
+			}
+
+			RE::BSEventNotifyControl ProcessEvent(const RE::TESObjectLoadedEvent* a_event, RE::BSTEventSource<RE::TESObjectLoadedEvent>*) override
+			{
+				// Cheap filter here; the lookup and Disable() run as a task,
+				// not inside the engine's 3D attach.
+				Guarded("Object loaded event", [&]() {
+					if (a_event && a_event->loaded && lobby::GetState() == lobby::State::kActive) {
+						const auto formID = a_event->formID;
+						Queue([formID]() { lobby::OnObjectLoaded(formID); });
+					}
+				});
+				return RE::BSEventNotifyControl::kContinue;
+			}
+		};
 	}
 
 	void Register()
@@ -239,6 +264,12 @@ namespace charselect::events
 			logger::info("Events: menu sink registered");
 		} else {
 			logger::error("Events: UI unavailable, no menu events");
+		}
+		if (auto* scripts = RE::ScriptEventSourceHolder::GetSingleton()) {
+			scripts->AddEventSink<RE::TESObjectLoadedEvent>(ObjectLoadedSink::GetSingleton());
+			logger::info("Events: object loaded sink registered");
+		} else {
+			logger::error("Events: ScriptEventSourceHolder unavailable; arrivals in the lobby are only caught by the sweep");
 		}
 	}
 }

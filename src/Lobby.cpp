@@ -894,8 +894,9 @@ namespace charselect::lobby
 		}
 
 		// Hides the cell's own NPCs. NPCs keep their schedules in the lobby
-		// game, so this runs for as long as the lobby does: anyone walking in
-		// later (Sigurd, 0.3.4) is hidden within a couple of seconds.
+		// game, so anyone walking in later (Sigurd, 0.3.4) has to be hidden
+		// too: at once when their 3D loads (OnObjectLoaded), and by a sweep
+		// every half second for anyone that misses.
 		// Outdoors the game keeps several cells loaded around the player, so
 		// "the lobby" is everything within this distance instead of one cell.
 		constexpr float kOutdoorRadius = 4000.0f;
@@ -916,13 +917,34 @@ namespace charselect::lobby
 			}
 		}
 
+		// Someone to hide: an enabled actor that's neither the player nor ours.
+		bool ShouldHide(RE::Actor* a_actor)
+		{
+			return a_actor && !a_actor->IsPlayerRef() && !a_actor->IsDisabled() && !IsSlotActor(a_actor);
+		}
+
+		// In the lobby as ForEachLobbyRef sees it: the player's cell indoors,
+		// within kOutdoorRadius outdoors.
+		bool InLobby(RE::TESObjectREFR* a_ref)
+		{
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			auto* cell = player ? player->GetParentCell() : nullptr;
+			if (!cell || !a_ref) {
+				return false;
+			}
+			if (cell->IsInteriorCell()) {
+				return a_ref->GetParentCell() == cell;
+			}
+			return a_ref->GetPosition().GetDistance(player->GetPosition()) <= kOutdoorRadius;
+		}
+
 		std::size_t HideOtherActors()
 		{
 			std::size_t hidden = 0;
 			std::string names;
 			ForEachLobbyRef([&](RE::TESObjectREFR* a_ref) {
 				auto* actor = a_ref ? a_ref->As<RE::Actor>() : nullptr;
-				if (actor && !actor->IsPlayerRef() && !actor->IsDisabled() && !IsSlotActor(actor)) {
+				if (ShouldHide(actor)) {
 					actor->Disable();
 					const char* name = actor->GetDisplayFullName();
 					names += std::format("{}{:08X} '{}'", hidden ? ", " : "", actor->GetFormID(), name ? name : "");
@@ -936,7 +958,7 @@ namespace charselect::lobby
 			return hidden;
 		}
 
-		constexpr auto kKeepClearInterval = std::chrono::seconds(2);
+		constexpr auto kKeepClearInterval = std::chrono::milliseconds(500);
 
 		void KeepCellClear(std::uint32_t a_generation)
 		{
@@ -2051,6 +2073,20 @@ namespace charselect::lobby
 		case rules::PreLoad::kNone:
 			break;
 		}
+	}
+
+	void OnObjectLoaded(RE::FormID a_formID)
+	{
+		if (g_state != State::kActive) {
+			return;
+		}
+		auto* actor = RE::TESForm::LookupByID<RE::Actor>(a_formID);
+		if (!ShouldHide(actor) || !InLobby(actor)) {
+			return;
+		}
+		actor->Disable();
+		const char* name = actor->GetDisplayFullName();
+		logger::info("Lobby: hid {:08X} '{}' as its 3D loaded", actor->GetFormID(), name ? name : "");
 	}
 
 	void OnNewGame()
