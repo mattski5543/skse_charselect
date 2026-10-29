@@ -18,4 +18,9 @@ namespace charselect::paths
 	// Data\SKSE\Plugins\CharGen\Exported\<name>.jslot relative to the game folder.
 	std::string           PresetName(std::uint32_t a_characterId);
 	std::filesystem::path PresetPath(std::uint32_t a_characterId);
+
+	// A path for the log, UTF-8, without the Windows user name: under My
+	// Games it starts "<My Games>\", under the game folder "<Skyrim>\".
+	// Players paste their logs in public.
+	std::string ForLog(const std::filesystem::path& a_path);
 }

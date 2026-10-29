@@ -3,6 +3,7 @@
 
 #include "Layout.h"
 
+#include "Paths.h"
 #include "Util.h"
 #include "core/Encoding.h"
 #include "core/FormKey.h"
@@ -54,9 +55,9 @@ namespace charselect::layout
 			WriteIni(ini, a_file);
 			std::string error;
 			if (files::WriteAtomic(*path, ini.str(), error)) {
-				logger::info("Layout: wrote {}", text::PathUtf8(*path));
+				logger::info("Layout: wrote {}", paths::ForLog(*path));
 			} else {
-				logger::error("Layout: could not write {}: {}", text::PathUtf8(*path), error);
+				logger::error("Layout: could not write {}: {}", paths::ForLog(*path), error);
 			}
 		}
 
@@ -99,7 +100,7 @@ namespace charselect::layout
 		}
 		const auto key = ParseFormKey(*value);
 		auto*      dh = RE::TESDataHandler::GetSingleton();
-		auto*      form = key && dh ? dh->LookupForm(key->localId, key->plugin) : nullptr;
+		auto*      form = key && dh ? dh->LookupForm(key->localId, text::FromUtf8(key->plugin)) : nullptr;  // the INI is UTF-8
 		auto*      furniture = form ? form->As<RE::TESFurniture>() : nullptr;
 		if (!furniture) {
 			logger::warn("Layout: '{}' is not a loaded furniture base", a_text);
@@ -124,7 +125,7 @@ namespace charselect::layout
 			return nullptr;
 		}
 		auto* dh = RE::TESDataHandler::GetSingleton();
-		auto* ref = dh ? dh->LookupForm<RE::TESObjectREFR>(key->localId, key->plugin) : nullptr;
+		auto* ref = dh ? dh->LookupForm<RE::TESObjectREFR>(key->localId, text::FromUtf8(key->plugin)) : nullptr;
 		if (!ref) {
 			logger::warn("Layout: reference '{}' not found (plugin not loaded?)", a_text);
 		}
@@ -135,7 +136,7 @@ namespace charselect::layout
 	{
 		// Not GetFile(0): USSEP edits many Skyrim.esm references (0.5.3).
 		const auto owner = OwningPlugin(a_ref);
-		return owner ? FormatFormKey({ owner->localId, std::string(owner->file->GetFilename()) }) : std::string{};
+		return owner ? FormatFormKey({ owner->localId, text::ToUtf8(owner->file->GetFilename()) }) : std::string{};
 	}
 
 	void SaveSlotSetting(std::string_view a_cell, std::size_t a_index, std::string_view a_key, std::string_view a_value)

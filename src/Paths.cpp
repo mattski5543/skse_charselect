@@ -4,6 +4,7 @@
 #include "Paths.h"
 
 #include "SaveIndex.h"
+#include "core/Encoding.h"
 
 namespace charselect::paths
 {
@@ -58,5 +59,28 @@ namespace charselect::paths
 		// Skyrim's working directory is the game folder (MO2's VFS overlays it too).
 		return std::filesystem::current_path() / "Data" / "SKSE" / "Plugins" / "CharGen" / "Exported" /
 		       std::format("{}.jslot", PresetName(a_characterId));
+	}
+
+	std::string ForLog(const std::filesystem::path& a_path)
+	{
+		const auto under = [&](const std::optional<std::filesystem::path>& a_base, std::string_view a_name) -> std::optional<std::string> {
+			if (!a_base) {
+				return std::nullopt;
+			}
+			const auto relative = a_path.lexically_relative(*a_base);
+			if (relative.empty() || relative.native().starts_with(L"..")) {
+				return std::nullopt;
+			}
+			return std::format("<{}>\\{}", a_name, text::PathUtf8(relative));
+		};
+		if (auto shown = under(MyGamesDir(), "My Games")) {
+			return *shown;
+		}
+		std::error_code ec;
+		const auto      game = std::filesystem::current_path(ec);
+		if (auto shown = under(ec ? std::nullopt : std::optional(game), "Skyrim")) {
+			return *shown;
+		}
+		return text::PathUtf8(a_path.filename());
 	}
 }

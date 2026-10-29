@@ -100,7 +100,7 @@ namespace charselect::lobby
 		std::size_t         g_highlighted{ 0 };
 		std::uint32_t     g_enterGeneration{ 0 };  // invalidates stale delayed callbacks
 
-		std::function<void(std::string_view)> g_onFailure;
+		std::function<void(std::string_view, bool)> g_onFailure;
 		std::function<void()>                 g_onReady;
 
 		void  TrySpawn(std::uint32_t a_generation, int a_attempt);
@@ -185,7 +185,7 @@ namespace charselect::lobby
 			SetState(State::kIdle);
 			if (g_onFailure) {
 				// The technical reason is in the log; players get a plain message.
-				g_onFailure("Could not load the character select screen. See CharSelect.log for details.");
+				g_onFailure("Could not load the character select screen. See CharSelect.log for details.", false);
 			}
 		}
 
@@ -265,7 +265,7 @@ namespace charselect::lobby
 				return slots;
 			}
 			const auto scan = ScanSaveDirectory(*saveDir);
-			logger::info("Lobby: {} characters in {}", scan.characters.size(), text::PathUtf8(*saveDir));
+			logger::info("Lobby: {} characters in {}", scan.characters.size(), paths::ForLog(*saveDir));
 
 			auto*      dh = RE::TESDataHandler::GetSingleton();
 			const auto max = config::Get().maxCharacters;
@@ -285,7 +285,7 @@ namespace charselect::lobby
 				if (!data) {
 					missing = "no sidecar yet (load and save once to capture)";
 				} else if (!std::filesystem::exists(paths::PresetPath(character.characterId))) {
-					missing = std::format("no RaceMenu preset at {}", text::PathUtf8(paths::PresetPath(character.characterId)));
+					missing = std::format("no RaceMenu preset at {}", paths::ForLog(paths::PresetPath(character.characterId)));
 				} else if (race = dh ? dh->LookupForm<RE::TESRace>(data->race.localId, text::FromUtf8(data->race.plugin)) : nullptr; !race) {
 					missing = std::format("race {}:{:08X} not loaded", data->race.plugin, data->race.localId);
 				}
@@ -546,6 +546,22 @@ namespace charselect::lobby
 			g_light = ref->CreateRefHandle();
 			g_highlighted = a_index;
 			logger::debug("Lobby: highlight light {:08X} on slot {} at ({:.0f}, {:.0f}, {:.0f})", ref->GetFormID(), a_index + 1, pos.x, pos.y, pos.z);
+		}
+
+		std::uint32_t g_lightTicket{ 0 };
+
+		// While a character is nudged in the editor (key repeat, several steps
+		// a second), the light follows once the moves pause, instead of a new
+		// light reference being placed on every step.
+		void PlaceLightSoon(std::size_t a_index)
+		{
+			const auto ticket = ++g_lightTicket;
+			const auto generation = g_enterGeneration;
+			RunAfter(std::chrono::milliseconds(200), [ticket, generation, a_index]() {
+				if (ticket == g_lightTicket && generation == g_enterGeneration && g_state == State::kActive) {
+					PlaceLight(a_index);
+				}
+			});
 		}
 
 		void Reveal(std::string_view a_why)
@@ -1145,13 +1161,27 @@ namespace charselect::lobby
 			return id && _stricmp(id, std::string(a_editorId).c_str()) == 0;
 		}
 
+		void          TryFallbackOrFail(std::string_view a_reason);
+		std::uint32_t g_cocTicket{ 0 };
+
+		// Each coc gets its own watchdog, so a fallback cell tried late still
+		// gets the full time to load.
 		void IssueCoc(std::string_view a_cell)
 		{
 			g_targetCell = std::string(a_cell);
 			g_spawnScheduled = false;
 			if (!RunConsoleCommand(std::format("coc {}", a_cell))) {
 				Fail("console command failed");
+				return;
 			}
+			const auto ticket = ++g_cocTicket;
+			const auto generation = g_enterGeneration;
+			RunAfter(kEnterWatchdog, [ticket, generation]() {
+				if (ticket == g_cocTicket && generation == g_enterGeneration && g_state == State::kEntering && !g_spawnScheduled) {
+					LogPlayer("watchdog");
+					TryFallbackOrFail("no loading screen after coc (bad cell editor ID?)");
+				}
+			});
 		}
 
 		void TryFallbackOrFail(std::string_view a_reason)
@@ -1447,7 +1477,7 @@ namespace charselect::lobby
 		return out;
 	}
 
-	void SetFailureHandler(std::function<void(std::string_view)> a_handler)
+	void SetFailureHandler(std::function<void(std::string_view, bool)> a_handler)
 	{
 		g_onFailure = std::move(a_handler);
 	}
@@ -1468,7 +1498,7 @@ namespace charselect::lobby
 		auto slots = CollectSlots();
 		if (slots.empty()) {
 			if (g_onFailure) {
-				g_onFailure("No saved characters found.");
+				g_onFailure("No saved characters found.", true);
 			}
 			return;
 		}
@@ -1490,14 +1520,6 @@ namespace charselect::lobby
 
 		SetState(State::kEntering);
 		IssueCoc(config::Get().lobbyCell);
-
-		const auto generation = g_enterGeneration;
-		RunAfter(kEnterWatchdog, [generation]() {
-			if (generation == g_enterGeneration && g_state == State::kEntering && !g_spawnScheduled) {
-				LogPlayer("watchdog");
-				TryFallbackOrFail("no loading screen after coc (bad cell editor ID?)");
-			}
-		});
 	}
 
 	void OnLoadingMenuClosed()
@@ -1676,7 +1698,7 @@ namespace charselect::lobby
 				ConfigurePoses(a_index);  // new home for the drift guard
 			}
 			UpdateSlotViews();
-			PlaceLight(a_index);
+			PlaceLightSoon(a_index);
 		}
 
 		void SaveEdits()

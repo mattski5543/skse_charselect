@@ -131,7 +131,9 @@ namespace charselect::lobby
 	void UnlinkSeats();
 
 	// Called if the lobby could not be entered, so the frontend can fall back.
-	void SetFailureHandler(std::function<void(std::string_view a_reason)> a_handler);
+	// a_nothingToShow: there are no saved characters yet (a new player), not
+	// an error.
+	void SetFailureHandler(std::function<void(std::string_view a_reason, bool a_nothingToShow)> a_handler);
 	// Called once characters are spawned and the select menu should appear.
 	void SetReadyHandler(std::function<void()> a_handler);
 }

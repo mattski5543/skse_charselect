@@ -163,7 +163,8 @@ namespace charselect::tint
 		// thread while the game renders: take the renderer's lock, as RaceMenu
 		// does for its GPU morph updates. Unguarded, this crashed the graphics
 		// driver (0.5.25). The pixels are copied out under the lock and written
-		// to disk after it, so rendering waits only for the copy.
+		// to disk after it, so rendering waits only for the copy. Nothing in
+		// between may throw: the lock must be released, or the game hangs.
 		std::vector<std::uint8_t> pixels;
 		std::uint32_t             rowPitch = 0;
 		manager->Lock();
@@ -173,7 +174,11 @@ namespace charselect::tint
 			if (mapped.data) {
 				rowPitch = mapped.rowPitch;
 				const auto* data = static_cast<const std::uint8_t*>(mapped.data);
-				pixels.assign(data, data + static_cast<std::size_t>(rowPitch) * desc.height);
+				try {
+					pixels.assign(data, data + static_cast<std::size_t>(rowPitch) * desc.height);
+				} catch (const std::bad_alloc&) {
+					pixels.clear();  // logged below as a failed read
+				}
 			}
 			context->Unmap(staging, 0);
 		}
@@ -188,7 +193,7 @@ namespace charselect::tint
 		}
 		if (written) {
 			logger::info("Tint: {}: exported the face tint ({}x{}, format {}) to {}", id, desc.width, desc.height, static_cast<int>(desc.format),
-				text::PathUtf8(Path(a_characterId)));
+				paths::ForLog(Path(a_characterId)));
 		} else {
 			logger::warn("Tint: {}: could not read or write the tint mask", id);
 		}
@@ -218,10 +223,10 @@ namespace charselect::tint
 		std::error_code ec;
 		std::filesystem::create_directories(path.parent_path(), ec);
 		if (!dds::WritePlaceholder(path, argb)) {
-			logger::error("Tint: cannot write placeholder {}", text::PathUtf8(path));
+			logger::error("Tint: cannot write placeholder {}", paths::ForLog(path));
 			return;
 		}
 		logger::info("Tint: no RaceMenu tint export for {}; wrote a flat skin-tone placeholder #{:06X} at {}",
-			paths::PresetName(a_characterId), argb & 0x00FFFFFF, text::PathUtf8(path));
+			paths::PresetName(a_characterId), argb & 0x00FFFFFF, paths::ForLog(path));
 	}
 }

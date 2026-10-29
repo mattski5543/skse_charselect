@@ -70,10 +70,18 @@ namespace charselect::sidecar
 			RunAfter(std::chrono::seconds(5), TintWatcherTick);
 		}
 
-		void CheckTint(ExportTracker::Ticket a_ticket, bool a_thirdPerson)
+		// A real tint written by this export, not one left from an earlier one.
+		bool ExportedSince(std::uint32_t a_id, std::filesystem::file_time_type a_since)
+		{
+			std::error_code ec;
+			const auto      written = std::filesystem::last_write_time(tint::Path(a_id), ec);
+			return !ec && written + std::chrono::seconds(2) >= a_since && tint::HasRealExport(a_id);
+		}
+
+		void CheckTint(ExportTracker::Ticket a_ticket, bool a_thirdPerson, std::filesystem::file_time_type a_startedAt)
 		{
 			const auto id = a_ticket.characterId;
-			if (tint::HasRealExport(id)) {
+			if (ExportedSince(id, a_startedAt)) {
 				logger::info("Sidecar: tint texture for {} exported OK", FormatCharacterId(id));
 				std::scoped_lock lock(g_lock);
 				g_exports.Succeeded(a_ticket);
@@ -225,15 +233,16 @@ namespace charselect::sidecar
 			}
 			const auto name = paths::PresetName(a_id);
 			const auto start = std::chrono::steady_clock::now();
+			const auto startedAt = std::filesystem::file_time_type::clock::now();
 			const bool thirdPerson = InThirdPerson();
 			const bool queued = papyrus::CallStatic("CharGen", "SaveCharacter",
-				[a_ticket, a_id, name, start, thirdPerson](const RE::BSScript::Variable&) {
+				[a_ticket, a_id, name, start, startedAt, thirdPerson](const RE::BSScript::Variable&) {
 					const auto path = paths::PresetPath(a_id);
 					std::error_code ec;
 					const auto size = std::filesystem::file_size(path, ec);
 					const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 					if (ec) {
-						logger::error("Sidecar: CharGen.SaveCharacter('{}') finished but {} is missing ({})", name, text::PathUtf8(path), ec.message());
+						logger::error("Sidecar: CharGen.SaveCharacter('{}') finished but {} is missing ({})", name, paths::ForLog(path), ec.message());
 					} else {
 						logger::info("Sidecar: preset '{}' exported ({} bytes, {:.0f} ms after queueing)", name, size, ms);
 					}
@@ -249,7 +258,7 @@ namespace charselect::sidecar
 							logger::info("Sidecar: skipping the tint export for {}: the player has changed", FormatCharacterId(a_ticket.characterId));
 						}
 					});
-					RunAfter(std::chrono::seconds(3), [a_ticket, thirdPerson]() { CheckTint(a_ticket, thirdPerson); });
+					RunAfter(std::chrono::seconds(3), [a_ticket, thirdPerson, startedAt]() { CheckTint(a_ticket, thirdPerson, startedAt); });
 				},
 				RE::BSFixedString(name));
 			if (!queued) {
@@ -270,7 +279,7 @@ namespace charselect::sidecar
 			std::ifstream in(*path, std::ios::binary);
 			return FromJson(json::parse(in));
 		} catch (const std::exception& e) {
-			logger::error("Sidecar: failed to parse {}: {}", text::PathUtf8(*path), e.what());
+			logger::error("Sidecar: failed to parse {}: {}", paths::ForLog(*path), e.what());
 			return std::nullopt;
 		}
 	}
@@ -362,7 +371,7 @@ namespace charselect::sidecar
 					logger::debug("  spell: {} {:08X} '{}' ({} hand)", sp.plugin, sp.localId, sp.name, sp.hand);
 				}
 			} else {
-				logger::error("Sidecar: failed to write {}: {}", text::PathUtf8(*path), error);
+				logger::error("Sidecar: failed to write {}: {}", paths::ForLog(*path), error);
 			}
 		}
 

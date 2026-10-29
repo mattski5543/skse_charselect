@@ -32,7 +32,7 @@ TEST_CASE("ParseSaveName reads the game's save names", "[saves]")
 		CHECK(autosave->slot == 3);
 		CHECK(autosave->characterId == 0x5E6F7A8B);
 
-		const auto quick = ParseSaveName("Quicksave0_9C0D1E2F_1_476F726D_APHelgenInn_000001_20261014174236_1_1");
+		const auto quick = ParseSaveName("Quicksave0_9C0D1E2F_1_476F726D_RiverwoodSleepingGiantInn_000001_20261014174236_1_1");
 		REQUIRE(quick);
 		CHECK(quick->saveType == "Quicksave");
 		CHECK(quick->slot == 0);
@@ -65,14 +65,14 @@ TEST_CASE("ParseSaveName rejects names without a character ID", "[saves]")
 	CHECK_FALSE(ParseSaveName("MySave"));                 // console "save MySave"
 	CHECK_FALSE(ParseSaveName("Save7"));
 	CHECK_FALSE(ParseSaveName("Save7_1A2B3C4D"));         // nothing after the ID
-	CHECK_FALSE(ParseSaveName("Save7_1987B0B_x"));        // 7 hex digits
+	CHECK_FALSE(ParseSaveName("Save7_1A2B3C4_x"));        // 7 hex digits
 	CHECK_FALSE(ParseSaveName("Save7_1A2B3C4DA_x"));      // 9 hex digits
-	CHECK_FALSE(ParseSaveName("Save7_1987G0B4_x"));       // not hex
+	CHECK_FALSE(ParseSaveName("Save7_1A2G3C4D_x"));       // not hex
 	CHECK_FALSE(ParseSaveName("Save7__x"));               // empty ID
 	CHECK_FALSE(ParseSaveName("Backup7_1A2B3C4D_x"));     // not a game save type
 	CHECK_FALSE(ParseSaveName("7_1A2B3C4D_x"));           // no type
-	CHECK_FALSE(ParseSaveName("Save7_+1987B0B_x"));       // sign
-	CHECK_FALSE(ParseSaveName("Save7_0x1987B0_x"));       // C prefix
+	CHECK_FALSE(ParseSaveName("Save7_+1A2B3C4_x"));       // sign
+	CHECK_FALSE(ParseSaveName("Save7_0x1A2B3C_x"));       // C prefix
 }
 
 // ---- headers ----------------------------------------------------------------

@@ -18,6 +18,7 @@ namespace charselect::frontend
 		bool   g_loggedCallbacks{ false };
 		bool   g_atMainMenu{ false };
 		bool   g_classicThisVisit{ false };  // stay on the vanilla menu until it closes
+		bool   g_viaHotkey{ false };         // this visit's lobby was asked for with the hotkey
 		bool   g_covered{ false };           // CoverMainMenu hid it for the lobby this visit
 
 		std::optional<std::chrono::steady_clock::time_point> g_mainMenuOpenedAt;  // until the lobby shows
@@ -126,23 +127,28 @@ namespace charselect::frontend
 			}
 		}
 
-		void OnLobbyFailure(std::string_view a_reason);
+		void OnLobbyFailure(std::string_view a_reason, bool a_nothingToShow);
 	}
 
 	void OnSelectMenuUnavailable()
 	{
 		logger::error("Frontend: the select menu's movie didn't load; using the vanilla main menu this session");
-		OnLobbyFailure("Its menu file (Interface\\CharSelectMenu.swf) couldn't be loaded, so the main menu is shown instead. Reinstalling CharSelect should fix this.");
+		OnLobbyFailure("Its menu file (Interface\\CharSelectMenu.swf) couldn't be loaded, so the main menu is shown instead. Reinstalling CharSelect should fix this.", false);
 	}
 
 	namespace
 	{
-		void OnLobbyFailure(std::string_view a_reason)
+		void OnLobbyFailure(std::string_view a_reason, bool a_nothingToShow)
 		{
 			SelectMenu::Hide();
 			if (g_atMainMenu) {
 				g_classicThisVisit = true;
 				SetVanillaVisible(true);
+				if (a_nothingToShow && !g_viaHotkey) {
+					// A new player's first launch: just the vanilla menu, no message.
+					logger::info("Frontend: no saved characters yet; showing the vanilla main menu");
+					return;
+				}
 				RE::DebugMessageBox(std::format("CharSelect: {}", a_reason).c_str());
 			} else {
 				// Failed after leaving the main menu: go back to it.
@@ -228,6 +234,7 @@ namespace charselect::frontend
 	void OnMainMenuOpened()
 	{
 		g_atMainMenu = true;
+		g_viaHotkey = false;
 		resetguard::Restore("main menu", false);
 		lobby::OnMainMenuOpened();
 		sidecar::OnMainMenuOpened();
@@ -270,7 +277,10 @@ namespace charselect::frontend
 				g_classicThisVisit = true;
 				SelectMenu::Hide();
 				SetVanillaVisible(true);
-				RE::DebugMessageBox("CharSelect: That save couldn't be loaded, so the game returned to the main menu. Press F7 for the character select.");
+				const auto key = config::Get().lobbyHotkey == 0x41 ? std::string("F7") : std::string("the CharSelect hotkey (iLobbyHotkey)");
+				RE::DebugMessageBox(
+					std::format("CharSelect: That save couldn't be loaded, so the game returned to the main menu. Press {} for the character select.", key)
+						.c_str());
 				return;
 			}
 			StartLobby();
@@ -298,6 +308,7 @@ namespace charselect::frontend
 			OnSelectMenuUnavailable();
 			return;
 		}
+		g_viaHotkey = true;
 		StartLobby();
 	}
 
@@ -444,8 +455,8 @@ namespace charselect::frontend
 				logger::warn("Frontend: Journal entry handler not found; LOAD stays as it is");
 				return;
 			}
-			RE::GPtr<CategoryPressHandler> handler{ new CategoryPressHandler() };
-			RE::GFxValue                   replacement;
+			auto         handler = RE::make_gptr<CategoryPressHandler>();
+			RE::GFxValue replacement;
 			a_movie->CreateFunction(&replacement, handler.get());
 			a_page.SetMember(kOriginalPress, original);
 			a_page.SetMember("onCategoryButtonPress", replacement);
