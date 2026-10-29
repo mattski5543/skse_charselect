@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.26)
 set(PROJECT_AUTHOR "portalfl0w")
 project(
 	CharSelect
-	VERSION 0.9.11
+	VERSION 0.9.12
 	LANGUAGES CXX)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
