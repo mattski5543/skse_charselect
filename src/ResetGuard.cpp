@@ -5,6 +5,8 @@
 #include "Util.h"
 #include "core/Encoding.h"
 
+#include <unordered_set>
+
 namespace charselect::resetguard
 {
 	namespace
@@ -46,8 +48,8 @@ namespace charselect::resetguard
 			RE::BGSColorForm*                              hairColor{ nullptr };    // null if not a plugin record
 			RE::BGSTextureSet*                             faceDetails{ nullptr };
 
-			// The rest of the record, put back only if it came back emptied
-			// (see Emptied). Values, not the record's own heap blocks: those are
+			// The rest of the record, used only if it comes back emptied (see
+			// FindEmptied). Values, not the record's own heap blocks: those are
 			// freed when the record is emptied.
 			RE::TESNPC*                                    faceNPC{ nullptr };
 			float                                          height{ 1.0f };
@@ -63,23 +65,17 @@ namespace charselect::resetguard
 			std::vector<RE::TESNPC::Layer>                 tints;
 			std::optional<RE::TESNPC::FaceData>            faceData;
 			bool                                           hadHead{ false };
-			// The record's own blocks as they were, compared by address only:
-			// an emptied record can be left pointing at freed ones.
-			const void*                                    headBlock{ nullptr };
-			const void*                                    faceBlock{ nullptr };
-			const void*                                    tintBlock{ nullptr };
-			const void*                                    hairRaw{ nullptr };  // whatever it was, plugin record or not
-			const void*                                    faceDetailsRaw{ nullptr };
 		};
 
-		// Compared across the switch and logged, never written back.
+		// Compared across the switch and logged (debug), never written back.
+		// Only the record's own fields: its head data and tint list may be
+		// freed blocks on an emptied record, so nothing is read through them.
 		struct Counts
 		{
 			std::uint32_t        factions{ 0 };
 			std::uint32_t        packages{ 0 };
 			std::uint32_t        items{ 0 };
 			const RE::TESForm*   outfit{ nullptr };
-			const RE::TESForm*   hairColor{ nullptr };
 			const RE::TESForm*   faceNPC{ nullptr };
 			const RE::TESForm*   race{ nullptr };
 			const RE::TESForm*   npcClass{ nullptr };
@@ -88,7 +84,6 @@ namespace charselect::resetguard
 			float                height{ 0.0f };
 			float                weight{ 0.0f };
 			bool                 faceData{ false };
-			std::uint32_t        tintLayers{ 0 };
 		};
 
 		struct HeadPartState
@@ -179,10 +174,8 @@ namespace charselect::resetguard
 
 		Counts CountsOf(const RE::TESNPC* a_npc)
 		{
-			return Counts{ a_npc->factions.size(), PackageCount(a_npc), a_npc->numContainerObjects, a_npc->defaultOutfit,
-				a_npc->headRelatedData ? a_npc->headRelatedData->hairColor : nullptr, a_npc->faceNPC, a_npc->race, a_npc->npcClass,
-				a_npc->combatStyle, a_npc->voiceType, a_npc->height, a_npc->weight, a_npc->faceData != nullptr,
-				a_npc->tintLayers ? a_npc->tintLayers->size() : 0 };
+			return Counts{ a_npc->factions.size(), PackageCount(a_npc), a_npc->numContainerObjects, a_npc->defaultOutfit, a_npc->faceNPC,
+				a_npc->race, a_npc->npcClass, a_npc->combatStyle, a_npc->voiceType, a_npc->height, a_npc->weight, a_npc->faceData != nullptr };
 		}
 
 		std::string_view TypeName(const RE::TESForm* a_form)
@@ -271,13 +264,6 @@ namespace charselect::resetguard
 				st.faceDetails = PluginOrNull(head->faceDetails);
 			}
 			st.hadHead = a_npc->headRelatedData != nullptr;
-			st.headBlock = a_npc->headRelatedData;
-			st.faceBlock = a_npc->faceData;
-			st.tintBlock = a_npc->tintLayers;
-			if (const auto* head = a_npc->headRelatedData) {
-				st.hairRaw = head->hairColor;
-				st.faceDetailsRaw = head->faceDetails;
-			}
 			st.faceNPC = PluginOrNull(a_npc->faceNPC);
 			st.height = a_npc->height;
 			st.weight = a_npc->weight;
@@ -388,8 +374,52 @@ namespace charselect::resetguard
 			}
 		};
 
+		using EmptiedSet = std::unordered_set<const RE::TESForm*>;
+
+		// The revert resets some NPC records to blank defaults instead of
+		// reloading them: the characters loaded during the lobby's game (the
+		// Bannered Mare's Mikael and Uthgerd, a mod's Lydia standing there).
+		// Its mark is that every spell and perk is gone: a save can change an
+		// NPC's look, outfit or weight, but not empty its base record's lists.
+		// The record's head data, face data and tint list are freed but may
+		// still be pointed at, so this looks only at the lists, never into
+		// those blocks. Not the player's: the save sets that one up.
+		bool ListsGone(const NpcState& a_st)
+		{
+			const auto* npc = a_st.npc;
+			if (npc->GetFormID() == 0x7 || a_st.spells.size() + a_st.levSpells.size() + a_st.shouts.size() + a_st.perks.size() == 0) {
+				return false;
+			}
+			const auto* d = npc->actorEffects;
+			return (!d || d->numSpells + d->numlevSpells + d->numShouts == 0) && npc->perkCount == 0;
+		}
+
+		// The emptied records: those whose lists are gone, and the face
+		// templates they borrow their look from (followed through the captured
+		// faceNPC chain), which come back emptied with them but have no lists
+		// to show it. Worked out once, before anything is restored: a restored
+		// record has its lists back, so a later Restore() with the same capture
+		// (after MAIN MENU, then a load) never takes it for emptied again.
+		EmptiedSet FindEmptied(const Snapshot& a_s)
+		{
+			EmptiedSet out;
+			for (const auto& [id, st] : a_s.npcs) {
+				if (!ListsGone(st)) {
+					continue;
+				}
+				const RE::TESNPC* npc = st.npc;
+				while (npc && out.insert(npc).second) {
+					const auto it = a_s.npcs.find(npc->GetFormID());
+					npc = it != a_s.npcs.end() ? it->second.faceNPC : nullptr;
+				}
+			}
+			return out;
+		}
+
 		// Armor addons the revert removed (the armor holds only some of what it
-		// held). Anything a mod has added or swapped since is left alone.
+		// held), added back in their captured order. Anything a mod has added
+		// or swapped since is left alone. The array only grows, never passes
+		// through empty, in case an actor's 3D is being built from it.
 		void RestoreArmors(const Snapshot& a_s, Fixes& a_fixes)
 		{
 			for (const auto& [id, st] : a_s.armors) {
@@ -399,12 +429,11 @@ namespace charselect::resetguard
 					continue;
 				}
 				const auto had = now.size();
-				now.clear();
-				for (auto* addon : st.addons) {
+				for (auto* addon : missing) {
 					now.push_back(addon);
 				}
-				st.armor->bipedModelData.bipedObjectSlots = SlotMask(static_cast<RE::BGSBipedObjectForm::BipedObjectSlot>(st.slots));
-				a_fixes.Add("armor addons", std::format("{} {}->{}", Describe(st.armor), had, st.addons.size()));
+				st.armor->bipedModelData.bipedObjectSlots.set(static_cast<RE::BGSBipedObjectForm::BipedObjectSlot>(st.slots));
+				a_fixes.Add("armor addons", std::format("{} {}->{}", Describe(st.armor), had, now.size()));
 			}
 		}
 
@@ -420,9 +449,27 @@ namespace charselect::resetguard
 			}
 		}
 
-		void RestoreKeywords(const Snapshot& a_s, Fixes& a_fixes)
+		// A copy of a_items in a fresh engine array; the old one is never read
+		// or freed (an emptied record's may already be).
+		template <class T>
+		T** FreshArray(const std::vector<T*>& a_items)
+		{
+			auto* out = RE::calloc<T*>(a_items.size());
+			std::ranges::copy(a_items, out);
+			return out;
+		}
+
+		void RestoreKeywords(const Snapshot& a_s, const EmptiedSet& a_emptied, Fixes& a_fixes)
 		{
 			for (const auto& [id, st] : a_s.keywords) {
+				if (a_emptied.contains(st.owner)) {
+					if (st.form->numKeywords == 0 && !st.keywords.empty()) {
+						st.form->keywords = FreshArray(st.keywords);
+						st.form->numKeywords = static_cast<std::uint32_t>(st.keywords.size());
+						a_fixes.Add("NPC keywords", std::format("{} +{}", Describe(st.owner), st.keywords.size()));
+					}
+					continue;
+				}
 				const auto missing = Missing(st.form->keywords, st.form->numKeywords, st.keywords);
 				if (!missing.empty()) {
 					st.form->AddKeywords(missing);
@@ -431,58 +478,31 @@ namespace charselect::resetguard
 			}
 		}
 
-		// The revert resets some NPC records to blank defaults instead of
-		// reloading them: spells and perks gone, or tints, face shape or head
-		// data gone. Not the player's: the save sets that one up.
-		bool Emptied(const NpcState& a_st)
-		{
-			const auto* npc = a_st.npc;
-			if (npc->GetFormID() == 0x7) {
-				return false;
-			}
-			const auto* d = npc->actorEffects;
-			const auto  spellsNow = d ? d->numSpells + d->numlevSpells + d->numShouts : 0;
-			const bool  listsGone = a_st.spells.size() + a_st.levSpells.size() + a_st.shouts.size() + a_st.perks.size() > 0 && spellsNow == 0 &&
-			                       npc->perkCount == 0;
-			// A block that moved, went, or changed under the same address (Lydia's
-			// head data: freed, still pointed at, her hair color read as garbage).
-			const bool tintsGone = !a_st.tints.empty() &&
-			                       (!npc->tintLayers || npc->tintLayers != a_st.tintBlock || npc->tintLayers->empty());
-			const bool headGone = a_st.hadHead && (!npc->headRelatedData || npc->headRelatedData != a_st.headBlock ||
-			                                          npc->headRelatedData->hairColor != a_st.hairRaw ||
-			                                          npc->headRelatedData->faceDetails != a_st.faceDetailsRaw);
-			const bool faceGone = a_st.faceData && (!npc->faceData || npc->faceData != a_st.faceBlock);
-			return listsGone || tintsGone || headGone || faceGone;
-		}
-
-		// Everything else of an emptied record, from the values captured.
+		// The rest of an emptied record. Fields are only filled where the reset
+		// left them empty: a value there now came from the save or a mod, and
+		// stays. Height the reset sets to 1; weight it leaves alone, so weight
+		// isn't touched. Its head data, head parts, tint list and face data are
+		// freed blocks the record may still point at: each gets a fresh copy of
+		// the captured values, and the old block is never read, written or freed.
 		void RestoreEmptied(const NpcState& a_st, Fixes& a_fixes)
 		{
 			auto*                    npc = a_st.npc;
 			std::vector<std::string> what;
-			auto set = [&](auto& a_field, auto a_value, std::string_view a_name) {
-				if (a_field != a_value) {
+			auto fill = [&](auto& a_field, auto a_value, std::string_view a_name) {
+				if (!a_field && a_value) {
 					a_field = a_value;
 					what.emplace_back(a_name);
 				}
 			};
-			set(npc->faceNPC, a_st.faceNPC, "face template");
-			set(npc->height, a_st.height, "height");
-			set(npc->weight, a_st.weight, "weight");
-			if (a_st.npcClass) {
-				set(npc->npcClass, a_st.npcClass, "class");
-			}
-			if (a_st.combatStyle) {
-				set(npc->combatStyle, a_st.combatStyle, "combat style");
-			}
-			if (a_st.voiceType) {
-				set(npc->voiceType, a_st.voiceType, "voice");
-			}
-			if (a_st.defaultOutfit) {
-				set(npc->defaultOutfit, a_st.defaultOutfit, "outfit");
-			}
-			if (a_st.sleepOutfit) {
-				set(npc->sleepOutfit, a_st.sleepOutfit, "sleep outfit");
+			fill(npc->faceNPC, a_st.faceNPC, "face template");
+			fill(npc->npcClass, a_st.npcClass, "class");
+			fill(npc->combatStyle, a_st.combatStyle, "combat style");
+			fill(npc->voiceType, a_st.voiceType, "voice");
+			fill(npc->defaultOutfit, a_st.defaultOutfit, "outfit");
+			fill(npc->sleepOutfit, a_st.sleepOutfit, "sleep outfit");
+			if (npc->height == 1.0f && a_st.height != 1.0f) {
+				npc->height = a_st.height;
+				what.emplace_back("height");
 			}
 
 			std::size_t factions = 0;
@@ -518,19 +538,15 @@ namespace charselect::resetguard
 			if (items) {
 				what.push_back(std::format("{} inventory entries", items));
 			}
-			// An emptied record's blocks may already be freed, so they're never
-			// written into: each gets a fresh copy and the old one is left alone.
 			if (a_st.hadHead) {
-				auto* head = RE::calloc<RE::TESNPC::HeadRelatedData>(1);
+				auto* head = new RE::TESNPC::HeadRelatedData();
 				head->hairColor = a_st.hairColor;
 				head->faceDetails = a_st.faceDetails;
 				npc->headRelatedData = head;
 				what.emplace_back("hair color and face details");
 			}
 			if (!a_st.headParts.empty()) {
-				auto* parts = RE::calloc<RE::BGSHeadPart*>(a_st.headParts.size());
-				std::ranges::copy(a_st.headParts, parts);
-				npc->headParts = parts;
+				npc->headParts = FreshArray(a_st.headParts);
 				npc->numHeadParts = static_cast<std::int8_t>(a_st.headParts.size());
 				what.push_back(std::format("{} head parts", a_st.headParts.size()));
 			}
@@ -549,18 +565,44 @@ namespace charselect::resetguard
 				npc->faceData = face;
 				what.emplace_back("face shape");
 			}
-			logger::info("ResetGuard:   emptied record {}: put back {}", Describe(npc), what.empty() ? "nothing else" : Join(what));
+			logger::debug("ResetGuard:   emptied record {}: put back {}", Describe(npc), what.empty() ? "nothing else" : Join(what));
 			a_fixes.Add("emptied NPC records", std::format("{} ({})", Describe(npc), what.empty() ? "nothing else differed" : Join(what)));
 		}
 
+		// a_was's perks missing from the record, with their captured ranks.
+		std::vector<RE::PerkRankData> MissingPerks(const RE::TESNPC* a_npc, const NpcState& a_st)
+		{
+			std::vector<RE::BGSPerk*> now;
+			for (std::uint32_t i = 0; a_npc->perks && i < a_npc->perkCount; ++i) {
+				now.push_back(a_npc->perks[i].perk);
+			}
+			std::vector<RE::BGSPerk*> was;
+			for (const auto& [perk, rank] : a_st.perks) {
+				was.push_back(perk);
+			}
+			const auto missing = Missing(now.data(), now.size(), was);
+			std::vector<RE::PerkRankData> out;
+			for (const auto& [perk, rank] : a_st.perks) {
+				if (std::ranges::find(missing, perk) != missing.end()) {
+					out.emplace_back(perk, rank);
+				}
+			}
+			return out;
+		}
+
 		// Spells, perks and head parts that went missing, then the rest of any
-		// record the revert emptied.
-		void RestoreNpcs(const Snapshot& a_s, Fixes& a_fixes)
+		// record the revert emptied. An emptied record's spell and perk lists
+		// are rebuilt in fresh blocks (CommonLib's Add* helpers free the old
+		// array, which may already be freed); others are added to in place.
+		void RestoreNpcs(const Snapshot& a_s, const EmptiedSet& a_emptied, Fixes& a_fixes)
 		{
 			for (const auto& [id, st] : a_s.npcs) {
 				auto*      npc = st.npc;
-				const bool emptied = Emptied(st);
-				auto* d = npc->actorEffects;
+				const bool emptied = a_emptied.contains(npc);
+				if (emptied && (!st.spells.empty() || !st.levSpells.empty() || !st.shouts.empty())) {
+					npc->actorEffects = new RE::TESSpellList::SpellData();
+				}
+				auto*      d = npc->actorEffects;
 				const auto spells = d ? Missing(d->spells, d->numSpells, st.spells) : st.spells;
 				const auto levSpells = d ? Missing(d->levSpells, d->numlevSpells, st.levSpells) : st.levSpells;
 				const auto shouts = d ? Missing(d->shouts, d->numShouts, st.shouts) : st.shouts;
@@ -580,36 +622,37 @@ namespace charselect::resetguard
 					a_fixes.Add("NPC spells", std::format("{} +{}", Describe(npc), spells.size() + levSpells.size() + shouts.size()));
 				}
 
-				std::vector<RE::BGSPerk*> perksNow;
-				for (std::uint32_t i = 0; npc->perks && i < npc->perkCount; ++i) {
-					perksNow.push_back(npc->perks[i].perk);
+				if (emptied && !st.perks.empty()) {
+					npc->perks = nullptr;
+					npc->perkCount = 0;
 				}
-				std::vector<RE::BGSPerk*> perksWas;
-				for (const auto& [perk, rank] : st.perks) {
-					perksWas.push_back(perk);
-				}
-				if (const auto missing = Missing(perksNow.data(), perksNow.size(), perksWas); !missing.empty()) {
-					for (const auto& [perk, rank] : st.perks) {
-						if (std::ranges::find(missing, perk) != missing.end()) {
-							npc->AddPerk(perk, rank);
-						}
-					}
+				if (const auto missing = MissingPerks(npc, st); !missing.empty()) {
+					auto* old = npc->perks;
+					auto* fresh = RE::calloc<RE::PerkRankData>(npc->perkCount + missing.size());
+					std::copy_n(npc->perks, npc->perkCount, fresh);
+					std::ranges::copy(missing, fresh + npc->perkCount);
+					npc->perks = fresh;
+					npc->perkCount += static_cast<std::uint32_t>(missing.size());
+					RE::free(old);  // null for an emptied record
 					a_fixes.Add("NPC perks", std::format("{} +{}", Describe(npc), missing.size()));
 				}
 
+				if (emptied) {
+					RestoreEmptied(st, a_fixes);
+					continue;
+				}
+
 				const auto partsNow = npc->numHeadParts > 0 ? static_cast<std::size_t>(npc->numHeadParts) : 0;
-				if (const auto missing = emptied ? std::vector<RE::BGSHeadPart*>{} : Missing(npc->headParts, partsNow, st.headParts); !missing.empty()) {
-					auto* parts = RE::calloc<RE::BGSHeadPart*>(st.headParts.size());
-					std::ranges::copy(st.headParts, parts);
-					npc->headParts = parts;  // the old, shorter array is left as it is
+				if (const auto missing = Missing(npc->headParts, partsNow, st.headParts); !missing.empty()) {
+					npc->headParts = FreshArray(st.headParts);  // the old, shorter array is left as it is
 					npc->numHeadParts = static_cast<std::int8_t>(st.headParts.size());
 					a_fixes.Add("NPC head parts", std::format("{} {}->{}", Describe(npc), partsNow, st.headParts.size()));
 				}
 
-				// Hair color and face details went with the rest of the record:
-				// Papyrus GetHairColor crashed on the emptied one (pink hair).
-				if (!emptied && (st.hairColor || st.faceDetails)) {
-					auto* head = npc->headRelatedData;
+				// Hair color and face details missing from a record that wasn't
+				// emptied: Papyrus GetHairColor crashed on a missing one.
+				if (st.hairColor || st.faceDetails) {
+					auto*      head = npc->headRelatedData;
 					const bool hair = st.hairColor && !(head && head->hairColor);
 					const bool face = st.faceDetails && !(head && head->faceDetails);
 					if (hair || face) {
@@ -626,9 +669,6 @@ namespace charselect::resetguard
 						}
 						a_fixes.Add("NPC hair color and face details", Describe(npc));
 					}
-				}
-				if (emptied) {
-					RestoreEmptied(st, a_fixes);
 				}
 			}
 		}
@@ -657,7 +697,6 @@ namespace charselect::resetguard
 				count(npc, "packages", was.packages, now.packages);
 				count(npc, "inventory entries", was.items, now.items);
 				pointer(npc, "outfit", was.outfit, now.outfit);
-				pointer(npc, "hair color", was.hairColor, now.hairColor);
 				pointer(npc, "face template", was.faceNPC, now.faceNPC);
 				pointer(npc, "race", was.race, now.race);
 				pointer(npc, "class", was.npcClass, now.npcClass);
@@ -669,7 +708,6 @@ namespace charselect::resetguard
 				if (was.faceData != now.faceData) {
 					changes.Add(std::format("NPC face data {}", now.faceData ? "appeared" : "gone"), Describe(npc));
 				}
-				count(npc, "tint layers", was.tintLayers, now.tintLayers);
 			}
 			for (const auto& [id, st] : a_s.npcs) {
 				const auto* d = st.npc->actorEffects;
@@ -697,16 +735,16 @@ namespace charselect::resetguard
 				}
 			}
 			if (changes.byKind.empty()) {
-				logger::info("ResetGuard: {}: nothing else changed across the switch", a_when);
+				logger::debug("ResetGuard: {}: nothing else changed across the switch", a_when);
 				return;
 			}
 			std::size_t shown = 0;
 			for (const auto& [what, entry] : changes.byKind) {
 				if (++shown > kMaxListed) {
-					logger::info("ResetGuard: {}: ({} more kinds of change not listed)", a_when, changes.byKind.size() - kMaxListed);
+					logger::debug("ResetGuard: {}: ({} more kinds of change not listed)", a_when, changes.byKind.size() - kMaxListed);
 					break;
 				}
-				logger::info("ResetGuard: {}: {} on {} records, e.g. {}", a_when, what, entry.first, Join(entry.second));
+				logger::debug("ResetGuard: {}: {} on {} records, e.g. {}", a_when, what, entry.first, Join(entry.second));
 			}
 		}
 	}
@@ -729,16 +767,20 @@ namespace charselect::resetguard
 		if (!g_capture) {
 			return;
 		}
-		// What the switch changed, before anything is put back.
-		ReportOtherChanges(*g_capture, a_when);
-		Fixes fixes;
+		Fixes      fixes;
+		const auto emptied = FindEmptied(*g_capture);
 		RestoreArmors(*g_capture, fixes);
 		RestoreSkins(*g_capture, fixes);
-		RestoreKeywords(*g_capture, fixes);
-		RestoreNpcs(*g_capture, fixes);
+		RestoreKeywords(*g_capture, emptied, fixes);
+		RestoreNpcs(*g_capture, emptied, fixes);
 		logger::info("ResetGuard: {} (left the lobby's game: {}): {} fixes", a_when, g_capture->why, fixes.Total());
 		for (const auto& [kind, entry] : fixes.byKind) {
 			logger::info("ResetGuard:   put back {} on {} records, e.g. {}", kind, entry.first, Join(entry.second));
+		}
+		// What else the switch changed, after the restore: by now no record
+		// points at a freed block (debug log only).
+		if (spdlog::should_log(spdlog::level::debug)) {
+			ReportOtherChanges(*g_capture, a_when);
 		}
 		if (a_gameStarted) {
 			g_capture.reset();

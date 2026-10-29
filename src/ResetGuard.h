@@ -13,9 +13,10 @@
 // puts back what the revert took, conservatively: list entries that went
 // missing (armor addons, keywords, NPC spells, perks, head parts; never
 // replacing or dropping any) and fields that went empty (skins, hair color).
-// NPC records the revert reset to blank defaults (the characters standing in
-// the lobby) get every captured field back. Plugin records only. Other
-// changes across the switch are logged, not touched.
+// NPC records the revert reset to blank defaults (the characters loaded in
+// the lobby, and the face templates they use) get their lists and look back
+// in fresh blocks, and their other fields where the reset left them empty.
+// Plugin records only. Other changes across the switch are logged (debug).
 
 namespace charselect::resetguard
 {
