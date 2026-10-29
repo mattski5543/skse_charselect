@@ -3,6 +3,7 @@
 
 #include "Sidecar.h"
 
+#include "Appearance.h"
 #include "Lobby.h"
 #include "Papyrus.h"
 #include "Paths.h"
@@ -252,8 +253,11 @@ namespace charselect::sidecar
 					}
 					// RaceMenu's own tint export (a task it queues) never wrote a
 					// file on the user's setup, so export it ourselves too.
-					QueueTask([a_ticket]() {
+					QueueTask([a_ticket, name]() {
 						if (StillCurrent(a_ticket)) {
+							auto* player = RE::PlayerCharacter::GetSingleton();
+							appearance::CheckPreset(std::format("in game, just exported {}", name), a_ticket.characterId,
+								player ? player->GetActorBase() : nullptr);
 							tint::ExportFromPlayer(a_ticket.characterId);
 						} else {
 							logger::info("Sidecar: skipping the tint export for {}: the player has changed", FormatCharacterId(a_ticket.characterId));
@@ -347,8 +351,15 @@ namespace charselect::sidecar
 				g_exports.OnSave(id);
 				ticket = g_exports.Begin(id);
 			}
+			// The real character as the game has them, next to the saved look
+			// the select screen will use (checked again once a new export lands).
+			const auto who = std::format("in game, {} '{}' on {}", FormatCharacterId(id), s.name, a_why);
+			appearance::LogRecord(who, npc);
+			appearance::Log3D(who, player);
 			if (ticket && ShouldExportPreset(id)) {
 				ExportPreset(*ticket);
+			} else {
+				appearance::CheckPreset(who, id, npc);
 			}
 			s.preset = paths::PresetName(id);
 

@@ -3,6 +3,7 @@
 
 #include "Lobby.h"
 
+#include "Appearance.h"
 #include "Config.h"
 #include "Papyrus.h"
 #include "Layout.h"
@@ -697,6 +698,11 @@ namespace charselect::lobby
 			}
 			slot.finished = true;
 			logger::info("Lobby: slot {} '{}' ready ({:08X})", a_index + 1, slot.data.name, actor->GetFormID());
+			if (!slot.placeholder) {
+				const auto who = std::format("slot {} '{}' ready", a_index + 1, slot.data.name);
+				appearance::CheckPreset(who, slot.data.characterId, slot.npc);
+				appearance::Log3D(who, actor);
+			}
 			MaybeReveal();
 		}
 
@@ -723,6 +729,9 @@ namespace charselect::lobby
 			PlaceSlot(actor, slot);
 			const auto equipped = EquipWorn(actor, slot);
 			logger::info("Lobby: slot {} 3D loaded; equipped {}/{} worn items", a_index + 1, equipped, slot.data.worn.size());
+			if (!slot.placeholder) {
+				appearance::Log3D(std::format("slot {} '{}' 3D loaded", a_index + 1, slot.data.name), actor);
+			}
 			RunAfter(kFreezeDelay, [a_generation, a_index]() { FreezeSlot(a_generation, a_index); });
 		}
 
@@ -742,6 +751,11 @@ namespace charselect::lobby
 				// Leave it disabled: a base without face data is not safe to render.
 				FinishSlotFailed(a_index, "CharGen.LoadCharacterEx failed, actor stays hidden");
 				return;
+			}
+			if (!slot.placeholder) {
+				const auto who = std::format("slot {} '{}' after LoadCharacterEx", a_index + 1, slot.data.name);
+				appearance::LogRecord(who, slot.npc);
+				appearance::CheckPreset(who, slot.data.characterId, slot.npc);
 			}
 			actor->Enable(false);
 			// AI on from the first frame, so its idle is running long before
@@ -830,6 +844,7 @@ namespace charselect::lobby
 			// LoadCharacterEx points the face tint at the exported DDS; make sure
 			// something is there so a failed export can't render pink.
 			tint::EnsurePlaceholder(slot.data.characterId);
+			appearance::LogRecord(std::format("slot {} '{}' before LoadCharacterEx", a_index + 1, slot.data.name), slot.npc);
 
 			const bool queued = papyrus::CallStatic("CharGen", "LoadCharacterEx",
 				[generation, a_index](const RE::BSScript::Variable& a_result) {
