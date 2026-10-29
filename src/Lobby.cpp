@@ -1170,12 +1170,19 @@ namespace charselect::lobby
 		{
 			g_targetCell = std::string(a_cell);
 			g_spawnScheduled = false;
-			if (!RunConsoleCommand(std::format("coc {}", a_cell))) {
-				Fail("console command failed");
-				return;
-			}
 			const auto ticket = ++g_cocTicket;
 			const auto generation = g_enterGeneration;
+			// Outside GameLock: coc loads the cell before it returns, and the
+			// menu events and tasks of that load take the lock on other threads.
+			QueueTaskUnlocked([command = std::format("coc {}", a_cell), ticket]() {
+				if (!RunConsoleCommand(command)) {
+					QueueTask([ticket]() {
+						if (ticket == g_cocTicket && g_state == State::kEntering) {
+							Fail("console command failed");
+						}
+					});
+				}
+			});
 			RunAfter(kEnterWatchdog, [ticket, generation]() {
 				if (ticket == g_cocTicket && generation == g_enterGeneration && g_state == State::kEntering && !g_spawnScheduled) {
 					LogPlayer("watchdog");

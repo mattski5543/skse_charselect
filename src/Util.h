@@ -44,9 +44,10 @@ namespace charselect
 		});
 	}
 
-	// An SKSE task without GameLock, for an engine call that may wait for the
-	// main thread, which may itself be waiting for GameLock in an SKSE
-	// message: starting a load (PreLoadGame follows on the main thread).
+	// An SKSE task without GameLock, for an engine call that waits for other
+	// threads, which may themselves be waiting for GameLock: starting a load
+	// (PreLoadGame follows on the main thread) and coc (the cell loads before
+	// it returns).
 	inline void QueueTaskUnlocked(std::function<void()> a_fn)
 	{
 		SKSE::GetTaskInterface()->AddTask([fn = std::move(a_fn)]() { Guarded("task", fn); });
