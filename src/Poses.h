@@ -8,7 +8,7 @@
 // do-nothing package (stand here) or Skyrim.esm's defaultSitLinkedRefNoConv
 // with the slot's furniture as the actor's linked ref (sit there). Without a
 // package of their own actors fall back to DefaultMasterPackage, a sandbox
-// (0.3.0: seated in random chairs at spawn, walked to the bar). Idles are
+// (they sit in random chairs and wander off to the bar). Idles are
 // vanilla animation graph events (what Debug.SendAnimationEvent sends), so no
 // other mod is needed.
 //

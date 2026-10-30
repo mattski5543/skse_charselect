@@ -20,7 +20,6 @@ namespace charselect::frontend
 		kNewGame,
 	};
 
-
 	void Init();  // registers the lobby handlers; call at DataLoaded
 
 	// From the menu-open event itself, before the vanilla menu draws: hides

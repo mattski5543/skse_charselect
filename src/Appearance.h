@@ -24,7 +24,7 @@ namespace charselect::appearance
 	// The character's saved look (RaceMenu preset): when it and its tint were
 	// written, each head part as it resolves in this load order and whether
 	// RaceMenu would apply it to a_npc's race and sex, then every difference
-	// from a_npc (warnings). a_npc may be null: the saved look only.
+	// from a_npc. a_npc may be null: the saved look only.
 	void CheckPreset(std::string_view a_who, std::uint32_t a_characterId, const RE::TESNPC* a_npc);
 
 	// What the actor's head 3D holds: every object with its hair tint or face

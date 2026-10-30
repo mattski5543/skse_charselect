@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.26)
 set(PROJECT_AUTHOR "portalfl0w")
 project(
 	CharSelect
-	VERSION 0.9.14
+	VERSION 0.9.15
 	LANGUAGES CXX)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
@@ -12,6 +12,16 @@ endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# No paths from the build machine in what ships: source file names in the DLL
+# (__FILE__, std::source_location) are trimmed to the repository, debug info
+# maps the repository to C:\CharSelect, and the DLL names its PDB without a
+# folder. Set before CommonLib so its objects get the same.
+if(MSVC)
+	file(TO_NATIVE_PATH "${PROJECT_SOURCE_DIR}" CHARSELECT_NATIVE_DIR)
+	add_compile_options(/experimental:deterministic "/d1trimfile:${CHARSELECT_NATIVE_DIR}\\" "/pathmap:${CHARSELECT_NATIVE_DIR}=C:\\CharSelect")
+	add_link_options(/PDBALTPATH:%_PDB%)
+endif()
 
 # ------------------------------------------------------------------------------
 # CommonLibSSE-NG (alandtse fork), built from the pinned submodule.
@@ -86,13 +96,14 @@ endif()
 
 if(MSVC)
 	target_compile_options(${PROJECT_NAME} PRIVATE /W4 /utf-8 /Zc:preprocessor /permissive-)
-	# Always emit a PDB so crash loggers can symbolicate our frames.
-	target_link_options(${PROJECT_NAME} PRIVATE /DEBUG:FULL)
+	# Always emit a PDB so crash loggers can symbolicate our frames: the full
+	# one for debugging, and a stripped one (function names only) to ship.
+	target_link_options(${PROJECT_NAME} PRIVATE /DEBUG:FULL "/PDBSTRIPPED:$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.public.pdb")
 endif()
 
 # ------------------------------------------------------------------------------
 # Output: dist/<name>-<version>.zip, a FOMOD installer archive for Vortex/MO2:
-#   Core/       the plugin (+ .pdb so crash loggers can resolve our frames),
+#   Core/       the plugin (+ the stripped .pdb, so crash loggers can name our functions),
 #               the layouts and the menu movie, always installed
 #   Locations/  one CharSelect.ini per select screen location, one installed
 #   fomod/      the installer (fomod/ in the repo; see cmake/StageFomod.cmake)
@@ -109,7 +120,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/dist-files" "${STAGE_DIR}/Core"
 	COMMAND ${CMAKE_COMMAND} -E rm -f "${STAGE_DIR}/Core/SKSE/Plugins/CharSelect.ini"
 	COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> "${STAGE_DIR}/Core/SKSE/Plugins/"
-	COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_PDB_FILE:${PROJECT_NAME}> "${STAGE_DIR}/Core/SKSE/Plugins/"
+	COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.public.pdb" "${STAGE_DIR}/Core/SKSE/Plugins/${PROJECT_NAME}.pdb"
 	COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -DSTAGE_DIR=${STAGE_DIR}
 		-DPROJECT_VERSION=${PROJECT_VERSION} -DPROJECT_AUTHOR=${PROJECT_AUTHOR}
 		-P "${PROJECT_SOURCE_DIR}/cmake/StageFomod.cmake"

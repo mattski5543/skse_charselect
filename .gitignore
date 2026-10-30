@@ -1,4 +1,5 @@
 build/
+build-dist/
 dist/
 .vs/
 out/
@@ -6,3 +7,5 @@ CMakeUserPresets.json
 __pycache__/
 # A maintainer's own machine details for coding agents
 CLAUDE.local.md
+# The maintainer's release plan
+RELEASE_PLAN.md

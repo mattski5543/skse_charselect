@@ -26,14 +26,13 @@ namespace charselect::config
 		// isn't captured yet ("0x<local>|<plugin>", equipped in order): the
 		// black warlock hood, robes and boots. A standalone hood, because
 		// mods change combined ones: WACCF takes the hood off Hooded Monk
-		// Robes (0.5.10).
+		// Robes.
 		std::vector<std::string> standInOutfit{ "0x000C5D10|Skyrim.esm", "0x000C5D11|Skyrim.esm", "0x000C5D12|Skyrim.esm" };
 	};
 
 	// What parsing found worth logging, ready to log as is.
 	struct ParseLog
 	{
-		std::vector<std::string> infos;
 		std::vector<std::string> warnings;
 	};
 

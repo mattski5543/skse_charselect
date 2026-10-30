@@ -40,8 +40,11 @@ namespace charselect::input
 	{
 		kLeft,
 		kRight,
+		kUp,      // between the characters and the NEW GAME / LOAD / MAIN MENU / QUIT list
+		kDown,
+		kBack,    // out of that list, back to the characters
 		kConfirm,
-		kSaves,  // opens the vanilla Load list
+		kSaves,   // opens the vanilla Load list
 	};
 
 	// Layout editor keys.
@@ -72,6 +75,8 @@ namespace charselect::input
 	{
 		lobby::State  state{ lobby::State::kIdle };
 		bool          selectMenuOpen{ false };
+		bool          revealed{ false };    // the select screen has replaced the loading splash
+		bool          menuFading{ false };  // fading out to leave (ENTER, NEW GAME, MAIN MENU, QUIT)
 		bool          editorOpen{ false };
 		bool          atMainMenu{ false };
 		// A menu that takes typing or clicks is over ours: the console, the

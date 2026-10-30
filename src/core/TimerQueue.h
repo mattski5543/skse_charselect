@@ -32,7 +32,8 @@ namespace charselect
 		// a_fn goes to the dispatcher a_delay from now. Callbacks due at the
 		// same time keep the order they were posted in.
 		void Post(std::chrono::milliseconds a_delay, Task a_fn);
-		// No more callbacks are dispatched, pending or new. For process exit.
+		// No more callbacks are dispatched, pending or new (the destructor's
+		// first step).
 		void Shutdown();
 
 		[[nodiscard]] std::size_t Pending() const;

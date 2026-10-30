@@ -32,9 +32,10 @@ Install the archive with your mod manager (Vortex or Mod Organizer 2) and launch
 | Choose a character | Click them, Left/Right, A/D, or 1-9 | D-pad left/right |
 | Load their latest save | Enter, E, or click **Enter** | A |
 | Pick any save (Load) | S | X |
+| New Game, Load, Main Menu, Quit | Down arrow, then Up/Down and Enter | D-pad down, then up/down and A (B goes back) |
 | Layout editor | F8 | |
 
-**New Game**, **Main Menu** and **Quit** are in the bottom right. **Main Menu** takes you to the normal main menu; from there, F7 brings the select screen back.
+**New Game**, **Load**, **Main Menu** and **Quit** are in the bottom right. **Main Menu** takes you to the normal main menu; from there, F7 brings the select screen back.
 
 **Layout editor.** Press F8 in the select screen. Pick the camera or a character from the list (or click a character), then move them with the arrows or WASD, turn with Q/E, raise or lower with R/F, and tilt the camera with T/G. Holding a key repeats it. For a character you can also choose a pose at rest, a pose while selected, and a seat. **Save & close** (Enter or F8) keeps your changes, **Cancel** (Esc) throws them away, and **Reset to default** goes back to the built-in layout. Your layout is saved in `Documents\My Games\Skyrim Special Edition\SKSE\CharSelect\Layout.ini`.
 
@@ -48,6 +49,7 @@ Install the archive with your mod manager (Vortex or Mod Organizer 2) and launch
 | `iLobbyHotkey` | `0x41` (F7) | Key that opens the select screen from the main menu. |
 | `bDebugLog` | `0` | `1` writes a detailed `CharSelect.log`, for reporting a problem. |
 | `sLobbyCell` | your installer choice | The select screen's location (cell editor ID): `WhiterunBanneredMare`, `RiftenRaggedFlagon`, `SkyHavenTemple`, `HighHrothgarEntrance`, `SovngardeMeadHall`, or [your own](docs/CUSTOM_LOBBY.md). |
+| `sFallbackCell` | `qasmoke` | Used if `sLobbyCell` can't be loaded (misspelled, or its mod isn't installed); you get a message when that happens. |
 | `iMaxCharacters` | `5` | How many characters to show, 1 to 9, most recently played first. |
 | `sStandInOutfit` | black hood, robes, boots | What the hooded figure wears for characters not recorded yet. |
 
@@ -97,13 +99,13 @@ Uninstall the mod as usual. CharSelect also writes a few files per character, wh
 |---|---|
 | Face texture, about 1 MB per character | `<Skyrim>\Data\Textures\CharGen\Exported\CharSelect_<ID>.dds` |
 | RaceMenu preset | `<Skyrim>\Data\SKSE\Plugins\CharGen\Exported\CharSelect_<ID>.jslot` |
-| Character details, your layout, the log | `Documents\My Games\Skyrim Special Edition\SKSE\CharSelect\` and `...\SKSE\CharSelect.log` |
+| Character details, your layout, the logs | `Documents\My Games\Skyrim Special Edition\SKSE\CharSelect\`, and `...\SKSE\CharSelect.log` with `CharSelect.1.log` (the session before) |
 
 `<ID>` is the 8 characters after the save number in your save file names, such as `5E6F7A8B`. With Mod Organizer 2, the files under `Data` end up in the overwrite folder. When deleting from the two `Exported` folders, only delete files starting with `CharSelect_`; the rest belong to RaceMenu. On the GOG version, `Skyrim Special Edition` in the `Documents` paths is `Skyrim Special Edition GOG`.
 
 ## Building from source
 
-You need Visual Studio 2026 or 2022 with C++ desktop development, CMake 3.26 or newer, and vcpkg (Visual Studio includes one).
+You need Visual Studio 2026 or 2022 with C++ desktop development, CMake 4.2 or newer (3.26 is enough with Visual Studio 2022), and vcpkg (Visual Studio includes one).
 
 ```powershell
 git clone --recurse-submodules https://github.com/mattski5543/skse_charselect.git

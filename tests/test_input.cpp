@@ -17,6 +17,7 @@ namespace
 		Context ctx;
 		ctx.state = State::kActive;
 		ctx.selectMenuOpen = true;
+		ctx.revealed = true;
 		return ctx;
 	}
 
@@ -56,18 +57,36 @@ TEST_CASE("F8 only works on the select screen itself", "[input]")
 	CHECK(KindOf(behind, Device::kKeyboard, kF8) == Kind::kNone);
 
 	auto noMenu = Lobby();
-	noMenu.selectMenuOpen = false;  // behind the splash, or during a load
+	noMenu.selectMenuOpen = false;  // during a load
 	CHECK(KindOf(noMenu, Device::kKeyboard, kF8) == Kind::kNone);
+}
+
+TEST_CASE("The lobby's keys wait for the select screen and stop while it fades out", "[input]")
+{
+	auto splash = Lobby();
+	splash.revealed = false;  // "Loading characters"
+	auto fading = Lobby();
+	fading.menuFading = true;  // after ENTER, NEW GAME, MAIN MENU or QUIT
+	for (const auto& ctx : { splash, fading }) {
+		CHECK(KindOf(ctx, Device::kKeyboard, kF8) == Kind::kNone);
+		CHECK(KindOf(ctx, Device::kKeyboard, 0x41) == Kind::kNone);
+		CHECK(KindOf(ctx, Device::kKeyboard, kEnter) == Kind::kNone);
+		CHECK(KindOf(ctx, Device::kGamepad, kPadA) == Kind::kNone);
+	}
+	auto editorSplash = Editor();
+	editorSplash.revealed = false;
+	CHECK_FALSE(RepeatReachesEditor(editorSplash));
 }
 
 TEST_CASE("Nothing reaches the lobby outside it", "[input]")
 {
-	for (const auto state : { State::kIdle, State::kEntering, State::kLoadingSave }) {
+	for (const auto state : { State::kIdle, State::kEntering, State::kLoadingSave, State::kLeaving }) {
 		auto ctx = Lobby();
 		ctx.state = state;
 		CHECK(KindOf(ctx, Device::kKeyboard, kEnter) == Kind::kNone);
 		CHECK(KindOf(ctx, Device::kKeyboard, kF8) == Kind::kNone);
 		CHECK(KindOf(ctx, Device::kMouse, kMouseLeft) == Kind::kNone);
+		CHECK(KindOf(ctx, Device::kKeyboard, 0x41) == Kind::kNone);
 	}
 }
 
@@ -126,9 +145,15 @@ TEST_CASE("Select screen keys", "[input]")
 	CHECK(nav(Device::kKeyboard, kA) == Nav::kLeft);
 	CHECK(nav(Device::kKeyboard, kRight) == Nav::kRight);
 	CHECK(nav(Device::kKeyboard, kS) == Nav::kSaves);
+	CHECK(nav(Device::kKeyboard, kDown) == Nav::kDown);
+	CHECK(nav(Device::kKeyboard, kUp) == Nav::kUp);
 	CHECK(KindOf(ctx, Device::kKeyboard, kEsc) == Kind::kNone);  // Esc is the game's
 	CHECK(nav(Device::kGamepad, kPadA) == Nav::kConfirm);
 	CHECK(nav(Device::kGamepad, kPadX) == Nav::kSaves);
+	// The gamepad reaches NEW GAME, LOAD, MAIN MENU and QUIT with the D-pad.
+	CHECK(nav(Device::kGamepad, kPadDown) == Nav::kDown);
+	CHECK(nav(Device::kGamepad, kPadUp) == Nav::kUp);
+	CHECK(nav(Device::kGamepad, kPadB) == Nav::kBack);
 	CHECK(KindOf(ctx, Device::kMouse, kWheelDown) == Kind::kNone);
 	CHECK(KindOf(ctx, Device::kKeyboard, kQ) == Kind::kNone);
 	CHECK(KindOf(ctx, Device::kOther, kEnter) == Kind::kNone);

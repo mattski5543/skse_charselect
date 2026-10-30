@@ -40,6 +40,8 @@ namespace charselect
 		static void Hide();
 		// The menu's SWF failed to load this session: there is no select screen.
 		[[nodiscard]] static bool MovieFailed();
+		// Fading to black to leave (ENTER, NEW GAME, MAIN MENU, QUIT), or black after it.
+		[[nodiscard]] static bool IsFading();
 		[[nodiscard]] static bool IsOpen();
 
 		static void QueueClick(bool a_repeat = false);  // a_repeat: mouse held in the editor

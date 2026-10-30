@@ -58,15 +58,12 @@ namespace charselect::events
 			auto* ui = RE::UI::GetSingleton();
 			return { .state = lobby::GetState(),
 				.selectMenuOpen = SelectMenu::IsOpen(),
+				.revealed = lobby::IsRevealed(),
+				.menuFading = SelectMenu::IsFading(),
 				.editorOpen = lobby::IsEditorOpen(),
 				.atMainMenu = ui && ui->IsMenuOpen(RE::MainMenu::MENU_NAME),
 				.otherMenuOnTop = OtherMenuOnTop(),
 				.lobbyHotkey = config::Get().lobbyHotkey };
-		}
-
-		void Queue(std::function<void()> a_fn)
-		{
-			QueueTask(std::move(a_fn));
 		}
 
 		class InputSink : public RE::BSTEventSink<RE::InputEvent*>
@@ -133,17 +130,17 @@ namespace charselect::events
 					break;
 				case Kind::kEnterLobby:
 					logger::info("Input: lobby hotkey at main menu");
-					Queue([]() { frontend::EnterFromHotkey(); });
+					QueueTask([]() { frontend::EnterFromHotkey(); });
 					break;
 				case Kind::kSummon:
 					logger::info("Input: lobby hotkey in lobby, re-applying layout");
-					Queue([]() { lobby::Summon(); });
+					QueueTask([]() { lobby::Summon(); });
 					break;
 				case Kind::kToggleEditor:
 					if (ctx.editorOpen) {
 						SelectMenu::QueueEdit(SelectMenu::EditKey::kSaveClose);
 					} else {
-						Queue([]() { lobby::OpenEditor(); });
+						QueueTask([]() { lobby::OpenEditor(); });
 					}
 					break;
 				case Kind::kClick:
@@ -198,25 +195,28 @@ namespace charselect::events
 
 				if (menu == RE::MessageBoxMenu::MENU_NAME && opening && lobby::ShouldDismissMessageBoxes()) {
 					logger::info("Menu: closing a mod message box that opened in the lobby");
-					Queue([]() {
+					QueueTask([]() {
 						if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
 							queue->AddMessage(RE::MessageBoxMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
 						}
 					});
 				} else if (menu == RE::MainMenu::MENU_NAME) {
 					if (opening) {
-						// Here, not in a task: tasks waited ~3.5 s at startup
-						// while the vanilla menu was on screen (0.5.6).
+						// Here, not in a task: tasks can wait seconds at
+						// startup, with the vanilla menu on screen meanwhile.
 						frontend::CoverMainMenu();
 					}
-					Queue(opening ? std::function<void()>(frontend::OnMainMenuOpened) : std::function<void()>(frontend::OnMainMenuClosed));
+					QueueTask(opening ? std::function<void()>(frontend::OnMainMenuOpened) : std::function<void()>(frontend::OnMainMenuClosed));
 				} else if (menu == RE::JournalMenu::MENU_NAME && !opening) {
-					Queue([]() { lobby::OnJournalClosed(); });
-				} else if (menu == RE::LoadingMenu::MENU_NAME && opening && lobby::GetState() == lobby::State::kLoadingSave) {
-					// PLAY: the select menu stayed up, black, until the loading screen took over.
-					Queue([]() { SelectMenu::Hide(); });
+					QueueTask([]() { lobby::OnJournalClosed(); });
+				} else if (menu == RE::LoadingMenu::MENU_NAME && opening) {
+					lobby::OnLoadingMenuOpened();
+					if (lobby::GetState() == lobby::State::kLoadingSave) {
+						// PLAY: the select menu stayed up, black, until the loading screen took over.
+						QueueTask([]() { SelectMenu::Hide(); });
+					}
 				} else if (menu == RE::LoadingMenu::MENU_NAME && !opening) {
-					Queue([]() { lobby::OnLoadingMenuClosed(); });
+					QueueTask([]() { lobby::OnLoadingMenuClosed(); });
 				} else if (menu == RE::RaceSexMenu::MENU_NAME && !opening) {
 					sidecar::OnRaceMenuClosed();
 				}
@@ -241,7 +241,7 @@ namespace charselect::events
 				Guarded("Object loaded event", [&]() {
 					if (a_event && a_event->loaded && lobby::GetState() == lobby::State::kActive) {
 						const auto formID = a_event->formID;
-						Queue([formID]() { lobby::OnObjectLoaded(formID); });
+						QueueTask([formID]() { lobby::OnObjectLoaded(formID); });
 					}
 				});
 				return RE::BSEventNotifyControl::kContinue;

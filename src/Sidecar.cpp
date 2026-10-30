@@ -71,11 +71,11 @@ namespace charselect::sidecar
 		}
 
 		// A real tint written by this export, not one left from an earlier one.
-		bool ExportedSince(std::uint32_t a_id, std::filesystem::file_time_type a_since)
+		bool ExportedSince(std::uint32_t id, std::filesystem::file_time_type a_since)
 		{
 			std::error_code ec;
-			const auto      written = std::filesystem::last_write_time(tint::Path(a_id), ec);
-			return !ec && written + std::chrono::seconds(2) >= a_since && tint::HasRealExport(a_id);
+			const auto      written = std::filesystem::last_write_time(tint::Path(id), ec);
+			return !ec && written + std::chrono::seconds(2) >= a_since && tint::HasRealExport(id);
 		}
 
 		void CheckTint(ExportTracker::Ticket a_ticket, bool a_thirdPerson, std::filesystem::file_time_type a_startedAt)
@@ -108,7 +108,8 @@ namespace charselect::sidecar
 
 		std::optional<FormRef> MakeFormRef(const RE::TESForm* a_form)
 		{
-			// Not GetFile(0): an item WACCF edits was recorded under WACCF (0.5.4).
+			// Not GetFile(0): that's the last plugin to edit the item (WACCF edits
+			// many), where the lookup would miss it.
 			const auto owner = OwningPlugin(a_form);
 			if (!owner) {
 				return std::nullopt;
@@ -161,7 +162,7 @@ namespace charselect::sidecar
 				auto ref = obj->IsDynamicForm() ? GeneratedItemRef(obj) : MakeFormRef(obj);
 				if (!ref) {
 					if (!obj->IsDynamicForm()) {
-						logger::debug("  worn item {:08X} '{}' skipped (no source file)", obj->GetFormID(), obj->GetName() ? obj->GetName() : "");
+						logger::debug("Sidecar:   worn item {:08X} '{}' skipped (no source file)", obj->GetFormID(), obj->GetName() ? obj->GetName() : "");
 					}
 					continue;
 				}
@@ -207,17 +208,18 @@ namespace charselect::sidecar
 			return out;
 		}
 
-		bool ShouldExportPreset(std::uint32_t a_id)
+		bool ShouldExportPreset(std::uint32_t id)
 		{
 			std::scoped_lock lock(g_lock);
 			const auto now = std::chrono::steady_clock::now();
-			const auto it = g_lastExport.find(a_id);
-			const bool presetMissing = !std::filesystem::exists(paths::PresetPath(a_id)) || !tint::HasRealExport(a_id);
+			const auto it = g_lastExport.find(id);
+			std::error_code ec;
+			const bool      presetMissing = !std::filesystem::exists(paths::PresetPath(id), ec) || !tint::HasRealExport(id);
 			const auto last = it == g_lastExport.end() ? std::nullopt : std::optional(it->second);
 			if (NeedsPresetExport(presetMissing, last, now, g_raceMenuDirty)) {
 				logger::debug("Sidecar: preset export needed (missing={}, stale={}, raceMenuDirty={})", presetMissing,
 					!last || now - *last >= kPresetExportInterval, g_raceMenuDirty);
-				g_lastExport[a_id] = now;
+				g_lastExport[id] = now;
 				g_raceMenuDirty = false;
 				return true;
 			}
@@ -226,18 +228,18 @@ namespace charselect::sidecar
 
 		void ExportPreset(ExportTracker::Ticket a_ticket)
 		{
-			const auto a_id = a_ticket.characterId;
+			const auto id = a_ticket.characterId;
 			if (!StillCurrent(a_ticket)) {
-				logger::info("Sidecar: not exporting {}: the player has changed since it was asked for", FormatCharacterId(a_id));
+				logger::info("Sidecar: not exporting {}: the player has changed since it was asked for", FormatCharacterId(id));
 				return;
 			}
-			const auto name = paths::PresetName(a_id);
+			const auto name = paths::PresetName(id);
 			const auto start = std::chrono::steady_clock::now();
 			const auto startedAt = std::filesystem::file_time_type::clock::now();
 			const bool thirdPerson = InThirdPerson();
 			const bool queued = papyrus::CallStatic("CharGen", "SaveCharacter",
-				[a_ticket, a_id, name, start, startedAt, thirdPerson](const RE::BSScript::Variable&) {
-					const auto path = paths::PresetPath(a_id);
+				[a_ticket, id, name, start, startedAt, thirdPerson](const RE::BSScript::Variable&) {
+					const auto path = paths::PresetPath(id);
 					std::error_code ec;
 					const auto size = std::filesystem::file_size(path, ec);
 					const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -246,8 +248,8 @@ namespace charselect::sidecar
 					} else {
 						logger::info("Sidecar: preset '{}' exported ({} bytes, {:.0f} ms after queueing)", name, size, ms);
 					}
-					// RaceMenu's own tint export (a task it queues) never wrote a
-					// file on the user's setup, so export it ourselves too.
+					// RaceMenu's own tint export (a task it queues) has been seen
+					// never to write a file, so export it ourselves too.
 					QueueTask([a_ticket, name]() {
 						if (StillCurrent(a_ticket)) {
 							auto* player = RE::PlayerCharacter::GetSingleton();
@@ -264,15 +266,16 @@ namespace charselect::sidecar
 			if (!queued) {
 				logger::error("Sidecar: could not call CharGen.SaveCharacter - is RaceMenu installed?");
 				std::scoped_lock lock(g_lock);
-				g_lastExport.erase(a_id);
+				g_lastExport.erase(id);
 			}
 		}
 	}
 
 	std::optional<Sidecar> Read(std::uint32_t a_characterId)
 	{
-		const auto path = paths::SidecarPath(a_characterId);
-		if (!path || !std::filesystem::exists(*path)) {
+		const auto      path = paths::SidecarPath(a_characterId);
+		std::error_code ec;
+		if (!path || !std::filesystem::exists(*path, ec)) {
 			return std::nullopt;
 		}
 		try {
@@ -306,7 +309,7 @@ namespace charselect::sidecar
 
 			const auto parts = ParseSaveName(a_saveName);
 			if (!parts) {
-				logger::warn("Sidecar: save '{}' has no character ID in its name, skipping", a_saveName);
+				logger::info("Sidecar: save '{}' has a custom name (no character ID in it); its character isn't recorded", a_saveName);
 				return;
 			}
 
@@ -365,10 +368,10 @@ namespace charselect::sidecar
 				logger::info("Sidecar: wrote {} on {} for {} '{}' ({} worn, {} spells, {:.1f} ms)", text::PathUtf8(path->filename()), a_why,
 					FormatCharacterId(id), s.name, s.worn.size(), s.spells.size(), ms);
 				for (const auto& w : s.worn) {
-					logger::debug("  worn: {} {:08X} '{}'{}", w.plugin, w.localId, w.name, w.hand.empty() ? "" : " (" + w.hand + " hand)");
+					logger::debug("Sidecar:   worn: {} {:08X} '{}'{}", w.plugin, w.localId, w.name, w.hand.empty() ? "" : " (" + w.hand + " hand)");
 				}
 				for (const auto& sp : s.spells) {
-					logger::debug("  spell: {} {:08X} '{}' ({} hand)", sp.plugin, sp.localId, sp.name, sp.hand);
+					logger::debug("Sidecar:   spell: {} {:08X} '{}' ({} hand)", sp.plugin, sp.localId, sp.name, sp.hand);
 				}
 			} else {
 				logger::error("Sidecar: failed to write {}: {}", paths::ForLog(*path), error);
@@ -427,6 +430,7 @@ namespace charselect::sidecar
 
 	void OnMainMenuOpened()
 	{
+		++g_loadEpoch;  // a capture still waiting from the last load would take whoever comes next
 		std::scoped_lock lock(g_lock);
 		g_exports.Forget();
 	}

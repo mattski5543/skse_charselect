@@ -92,10 +92,10 @@ namespace charselect::tint
 		}
 
 		// The tint mask: a render target if there is one (how RaceMenu's
-		// export finds it), else the tint slot when it's uncompressed. On the
-		// user's setup the player's mask is a 512x512 RGBA, 1-mip texture in
-		// the tint slot without the render-target flag (0.5.17); a tint loaded
-		// from a file (an NPC's) would be compressed.
+		// export finds it), else the tint slot when it's uncompressed. The
+		// player's mask has been seen as a 512x512 RGBA, 1-mip texture in the
+		// tint slot without the render-target flag; a tint loaded from a file
+		// (an NPC's) would be compressed.
 		auto*                                                      facegen = static_cast<RE::BSLightingShaderMaterialFacegen*>(material);
 		// Held references, so a texture the game swaps out meanwhile stays valid.
 		const std::array<std::pair<const char*, RE::NiPointer<RE::NiSourceTexture>>, 3> slots{ { { "tint", facegen->tintTexture },
@@ -161,8 +161,8 @@ namespace charselect::tint
 		}
 		// The immediate context isn't thread-safe and this runs on an SKSE task
 		// thread while the game renders: take the renderer's lock, as RaceMenu
-		// does for its GPU morph updates. Unguarded, this crashed the graphics
-		// driver (0.5.25). The pixels are copied out under the lock and written
+		// does for its GPU morph updates. Unguarded, this crashes the graphics
+		// driver. The pixels are copied out under the lock and written
 		// to disk after it, so rendering waits only for the copy. Nothing in
 		// between may throw: the lock must be released, or the game hangs.
 		std::vector<std::uint8_t> pixels;
@@ -215,12 +215,12 @@ namespace charselect::tint
 
 	void EnsurePlaceholder(std::uint32_t a_characterId)
 	{
-		const auto path = Path(a_characterId);
-		if (std::filesystem::exists(path)) {
+		const auto      path = Path(a_characterId);
+		std::error_code ec;
+		if (std::filesystem::exists(path, ec)) {
 			return;
 		}
 		const auto argb = SkinTone(a_characterId);
-		std::error_code ec;
 		std::filesystem::create_directories(path.parent_path(), ec);
 		if (!dds::WritePlaceholder(path, argb)) {
 			logger::error("Tint: cannot write placeholder {}", paths::ForLog(path));

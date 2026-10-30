@@ -20,9 +20,15 @@
 
 namespace charselect::resetguard
 {
-	// Just before the lobby's game is left. Keeps an earlier
-	// capture that hasn't been restored yet (a failed load already reverted).
-	void Capture(std::string_view a_why);
+	// Just before the lobby's game may be left. Keeps an earlier capture that
+	// hasn't been restored yet (a failed load already reverted); true if it
+	// took a new one.
+	bool Capture(std::string_view a_why);
+
+	// The lobby's game carries on after all (the load list closed without a
+	// load or a quit): a capture taken for it would be stale by the time the
+	// game really is left.
+	void Discard(std::string_view a_why);
 
 	// Once the switch is done: the main menu opened, a new game
 	// started, or a load finished. With a_gameStarted the capture is used up.

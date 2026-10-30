@@ -13,6 +13,7 @@ namespace charselect::resetguard
 	{
 		constexpr std::size_t kMaxListed = 25;  // log lines per section
 		constexpr std::size_t kMaxExamples = 5;
+		constexpr RE::FormID  kPlayerBaseId = 0x7;
 
 		using SlotMask = REX::EnumSet<RE::BGSBipedObjectForm::BipedObjectSlot, std::uint32_t>;
 
@@ -245,7 +246,7 @@ namespace charselect::resetguard
 			}
 		}
 
-		void TakeNpc(Snapshot& a_s, RE::FormID a_id, RE::TESNPC* a_npc)
+		void TakeNpc(Snapshot& a_s, RE::FormID a_id, RE::TESNPC* a_npc, bool a_details)
 		{
 			NpcState st{ a_npc };
 			if (const auto* d = a_npc->actorEffects) {
@@ -298,10 +299,13 @@ namespace charselect::resetguard
 				st.faceData = *a_npc->faceData;
 			}
 			a_s.npcs.emplace(a_id, std::move(st));
-			a_s.counts.emplace(a_id, std::pair{ a_npc, CountsOf(a_npc) });
+			if (a_details) {
+				a_s.counts.emplace(a_id, std::pair{ a_npc, CountsOf(a_npc) });
+			}
 		}
 
-		Snapshot Take(std::string_view a_why)
+		// a_details: also what ReportOtherChanges compares (debug log only).
+		Snapshot Take(std::string_view a_why, bool a_details)
 		{
 			Snapshot s{ std::string(a_why) };
 			ForEachForm([&](RE::FormID a_id, RE::TESForm* a_form) {
@@ -317,16 +321,16 @@ namespace charselect::resetguard
 						break;
 					}
 				case RE::FormType::NPC:
-					TakeNpc(s, a_id, static_cast<RE::TESNPC*>(a_form));
+					TakeNpc(s, a_id, static_cast<RE::TESNPC*>(a_form), a_details);
 					break;
 				case RE::FormType::HeadPart:
-					{
+					if (a_details) {
 						const auto* part = static_cast<const RE::BGSHeadPart*>(a_form);
 						s.headParts.emplace(a_id, HeadPartState{ part, part->textureSet, Str(part->GetModel()) });
 						break;
 					}
 				case RE::FormType::TextureSet:
-					{
+					if (a_details) {
 						const auto* set = static_cast<const RE::BGSTextureSet*>(a_form);
 						TextureSetState st{ set };
 						for (std::size_t i = 0; i < st.paths.size(); ++i) {
@@ -387,7 +391,7 @@ namespace charselect::resetguard
 		bool ListsGone(const NpcState& a_st)
 		{
 			const auto* npc = a_st.npc;
-			if (npc->GetFormID() == 0x7 || a_st.spells.size() + a_st.levSpells.size() + a_st.shouts.size() + a_st.perks.size() == 0) {
+			if (npc->GetFormID() == kPlayerBaseId || a_st.spells.size() + a_st.levSpells.size() + a_st.shouts.size() + a_st.perks.size() == 0) {
 				return false;
 			}
 			const auto* d = npc->actorEffects;
@@ -416,10 +420,19 @@ namespace charselect::resetguard
 			return out;
 		}
 
+		// Moves a_fresh into a_array without freeing a_array's buffer: another
+		// thread may be reading it (building an actor's 3D from an armor), or,
+		// on an emptied record, it may already be freed. The old buffer is
+		// left as it is, a few bytes per record.
+		template <class T>
+		void InstallFresh(RE::BSTArray<T>& a_array, RE::BSTArray<T>&& a_fresh)
+		{
+			std::construct_at(&a_array, std::move(a_fresh));
+		}
+
 		// Armor addons the revert removed (the armor holds only some of what it
 		// held), added back in their captured order. Anything a mod has added
-		// or swapped since is left alone. The array only grows, never passes
-		// through empty, in case an actor's 3D is being built from it.
+		// or swapped since is left alone.
 		void RestoreArmors(const Snapshot& a_s, Fixes& a_fixes)
 		{
 			for (const auto& [id, st] : a_s.armors) {
@@ -428,10 +441,13 @@ namespace charselect::resetguard
 				if (missing.empty()) {
 					continue;
 				}
-				const auto had = now.size();
+				const auto                       had = now.size();
+				RE::BSTArray<RE::TESObjectARMA*> fresh(now);
 				for (auto* addon : missing) {
-					now.push_back(addon);
+					fresh.push_back(addon);
 				}
+				InstallFresh(now, std::move(fresh));
+				// The body slots the captured addons cover, which the revert also reset.
 				st.armor->bipedModelData.bipedObjectSlots.set(static_cast<RE::BGSBipedObjectForm::BipedObjectSlot>(st.slots));
 				a_fixes.Add("armor addons", std::format("{} {}->{}", Describe(st.armor), had, now.size()));
 			}
@@ -478,12 +494,13 @@ namespace charselect::resetguard
 			}
 		}
 
-		// The rest of an emptied record. Fields are only filled where the reset
-		// left them empty: a value there now came from the save or a mod, and
-		// stays. Height the reset sets to 1; weight it leaves alone, so weight
-		// isn't touched. Its head data, head parts, tint list and face data are
-		// freed blocks the record may still point at: each gets a fresh copy of
-		// the captured values, and the old block is never read, written or freed.
+		// The rest of an emptied record. Fields and lists are only filled where
+		// the reset left them empty: a value there now came from the save or a
+		// mod, and stays. Height the reset sets to 1; weight it leaves alone,
+		// so weight isn't touched. Its head data, head parts, tint list and
+		// face data are freed blocks the record may still point at, and its
+		// faction and inventory lists may be too: each gets a fresh copy of the
+		// captured values, and the old block is never read, written or freed.
 		void RestoreEmptied(const NpcState& a_st, Fixes& a_fixes)
 		{
 			auto*                    npc = a_st.npc;
@@ -505,18 +522,16 @@ namespace charselect::resetguard
 				what.emplace_back("height");
 			}
 
-			std::size_t factions = 0;
-			for (const auto& [faction, rank] : a_st.factions) {
-				if (std::ranges::none_of(npc->factions, [&](const RE::FACTION_RANK& f) { return f.faction == faction; })) {
+			if (npc->factions.empty() && !a_st.factions.empty()) {
+				RE::BSTArray<RE::FACTION_RANK> fresh;
+				for (const auto& [faction, rank] : a_st.factions) {
 					RE::FACTION_RANK entry{};
 					entry.faction = faction;
 					entry.rank = rank;
-					npc->factions.push_back(entry);
-					++factions;
+					fresh.push_back(entry);
 				}
-			}
-			if (factions) {
-				what.push_back(std::format("{} factions", factions));
+				InstallFresh(npc->factions, std::move(fresh));
+				what.push_back(std::format("{} factions", a_st.factions.size()));
 			}
 			if (npc->aiPackages.packages.empty() && !a_st.packages.empty()) {
 				for (auto it = a_st.packages.rbegin(); it != a_st.packages.rend(); ++it) {
@@ -524,19 +539,14 @@ namespace charselect::resetguard
 				}
 				what.push_back(std::format("{} AI packages", a_st.packages.size()));
 			}
-			std::size_t items = 0;
-			for (const auto& [obj, count] : a_st.items) {
-				bool has = false;
-				for (std::uint32_t i = 0; npc->containerObjects && i < npc->numContainerObjects && !has; ++i) {
-					has = npc->containerObjects[i] && npc->containerObjects[i]->obj == obj;
+			if (npc->numContainerObjects == 0 && !a_st.items.empty()) {
+				std::vector<RE::ContainerObject*> entries;
+				for (const auto& [obj, count] : a_st.items) {
+					entries.push_back(new RE::ContainerObject(obj, count));
 				}
-				if (!has) {
-					npc->AddObjectToContainer(obj, count, nullptr);
-					++items;
-				}
-			}
-			if (items) {
-				what.push_back(std::format("{} inventory entries", items));
+				npc->containerObjects = FreshArray(entries);
+				npc->numContainerObjects = static_cast<std::uint32_t>(entries.size());
+				what.push_back(std::format("{} inventory entries", entries.size()));
 			}
 			if (a_st.hadHead) {
 				auto* head = new RE::TESNPC::HeadRelatedData();
@@ -658,8 +668,6 @@ namespace charselect::resetguard
 					if (hair || face) {
 						if (!head) {
 							npc->headRelatedData = head = new RE::TESNPC::HeadRelatedData();
-							head->hairColor = nullptr;
-							head->faceDetails = nullptr;
 						}
 						if (hair) {
 							head->hairColor = st.hairColor;
@@ -749,17 +757,26 @@ namespace charselect::resetguard
 		}
 	}
 
-	void Capture(std::string_view a_why)
+	bool Capture(std::string_view a_why)
 	{
 		if (g_capture) {
 			logger::info("ResetGuard: leaving the lobby's game ({}); keeping the capture from '{}'", a_why, g_capture->why);
-			return;
+			return false;
 		}
 		const auto start = std::chrono::steady_clock::now();
-		g_capture = Take(a_why);
-		logger::info("ResetGuard: leaving the lobby's game ({}): captured {} armors, {} skins, {} keyword lists, {} NPCs, {} head parts, {} texture sets ({:.1f} ms)",
-			a_why, g_capture->armors.size(), g_capture->skins.size(), g_capture->keywords.size(), g_capture->npcs.size(), g_capture->headParts.size(),
-			g_capture->textureSets.size(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+		g_capture = Take(a_why, spdlog::should_log(spdlog::level::debug));
+		logger::info("ResetGuard: leaving the lobby's game ({}): captured {} armors, {} skins, {} keyword lists, {} NPCs ({:.1f} ms)", a_why,
+			g_capture->armors.size(), g_capture->skins.size(), g_capture->keywords.size(), g_capture->npcs.size(),
+			std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+		return true;
+	}
+
+	void Discard(std::string_view a_why)
+	{
+		if (g_capture) {
+			logger::info("ResetGuard: the lobby's game goes on ({}); capture from '{}' dropped", a_why, g_capture->why);
+			g_capture.reset();
+		}
 	}
 
 	void Restore(std::string_view a_when, bool a_gameStarted)

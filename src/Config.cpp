@@ -27,9 +27,6 @@ namespace charselect::config
 
 		ParseLog log;
 		Parse(in, g_settings, log);
-		for (const auto& line : log.infos) {
-			logger::info("{}", line);
-		}
 		for (const auto& line : log.warnings) {
 			logger::warn("{}", line);
 		}

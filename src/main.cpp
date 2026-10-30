@@ -69,8 +69,9 @@ namespace
 					result.filesSeen, result.characters.size(), result.failures.size(), result.elapsedMs);
 				for (const auto& c : result.characters) {
 					const auto& h = c.Latest().header;
-					const bool  hasSidecar = std::filesystem::exists(charselect::paths::SidecarPath(c.characterId).value_or(""));
-					const bool  hasPreset = std::filesystem::exists(charselect::paths::PresetPath(c.characterId));
+					std::error_code ec;
+					const bool      hasSidecar = std::filesystem::exists(charselect::paths::SidecarPath(c.characterId).value_or(""), ec);
+					const bool      hasPreset = std::filesystem::exists(charselect::paths::PresetPath(c.characterId), ec);
 					logger::debug("Character {} '{}' lvl {} {} {} - {} saves, last {} (sidecar={}, preset={})",
 						charselect::FormatCharacterId(c.characterId), h.playerName, h.playerLevel, h.raceEditorId,
 						h.playerSex ? "female" : "male", c.saves.size(), charselect::FormatFileTime(h.fileTime), hasSidecar, hasPreset);
@@ -198,6 +199,13 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
 	InitializeLog(name);
 	logger::info("{} v{} loading", name, version.string("."sv));
+
+	// Skyrim VR (1.4.x) isn't supported: it's built without it, and would
+	// fail later on an Address Library lookup with a misleading error.
+	if (a_skse->RuntimeVersion() < REL::Version(1, 5, 0)) {
+		logger::critical("Skyrim VR ({}) isn't supported; CharSelect is off", a_skse->RuntimeVersion().string("."sv));
+		return false;
+	}
 
 	// log = false: by default SKSE::Init sets up its own logger, which reopens
 	// (truncates) our log file and replaces our level and pattern.

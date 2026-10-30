@@ -1,6 +1,6 @@
 #pragma once
 
-// Per-character appearance sidecar, written on every save.
+// Per-character appearance sidecar, written on every save and after every load.
 //
 // One file per character (keyed by the character ID in the save name), not
 // per save: the select screen only shows a character's latest look, and a
@@ -31,7 +31,7 @@ namespace charselect::sidecar
 	void OnPreLoadGame(std::string_view a_saveName);
 
 	// Back at the main menu (or a new game or the lobby next): the player is
-	// nobody we know, so pending exports are dropped.
+	// nobody we know, so pending exports and a pending load capture are dropped.
 	void OnMainMenuOpened();
 
 	// Captures the loaded character as a save would, a moment after the load,

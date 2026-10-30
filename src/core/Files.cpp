@@ -15,6 +15,9 @@ namespace charselect::files
 		std::filesystem::create_directories(a_path.parent_path(), ec);
 		auto tmp = a_path;
 		tmp += ".tmp";
+		// File names only: the caller logs the folder (without the Windows
+		// user name).
+		const auto name = text::PathUtf8(tmp.filename());
 		const auto fail = [&](std::string a_why) {
 			a_error = std::move(a_why);
 			std::error_code ignored;
@@ -24,17 +27,17 @@ namespace charselect::files
 		{
 			std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
 			if (!out) {
-				return fail(std::format("cannot open {}", text::PathUtf8(tmp)));
+				return fail(std::format("cannot open {}", name));
 			}
 			out.write(a_text.data(), static_cast<std::streamsize>(a_text.size()));
 			out.flush();
 			if (!out) {
-				return fail(std::format("write to {} failed", text::PathUtf8(tmp)));
+				return fail(std::format("write to {} failed", name));
 			}
 		}
 		std::filesystem::rename(tmp, a_path, ec);
 		if (ec) {
-			return fail(std::format("rename {} failed: {}", text::PathUtf8(tmp), ec.message()));
+			return fail(std::format("rename {} failed: {}", name, ec.message()));
 		}
 		return true;
 	}

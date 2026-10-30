@@ -23,7 +23,6 @@ namespace charselect
 		constexpr double kBlack = 0x000000;
 		constexpr double kFaint = 0x55524C;  // disabled
 
-
 		enum class Mode
 		{
 			kSplash,
@@ -83,10 +82,10 @@ namespace charselect
 			std::vector<Hit>             hits;        // UI elements, topmost last
 			std::vector<Hit>             actorHits;   // projected characters
 			std::size_t                  plateCount{ 0 };  // name plates built (_root.ui.plates.plate<i>)
+			std::optional<std::size_t>   menuFocus;   // keyboard or gamepad on the NEW GAME / LOAD / MAIN MENU / QUIT list
 			float                        cursorX{ -1.0f };
 			float                        cursorY{ -1.0f };
 			bool                         needsBuild{ true };
-			int                          cursorLogs{ 0 };  // debug: the first few cursor mappings
 			float                        fade{ 0.0f };  // seconds left of the splash fading out
 			bool                         spinnerBuilt{ false };  // _root.ui.spinner exists
 			float                        spinTime{ 0.0f };
@@ -105,16 +104,12 @@ namespace charselect
 		constexpr float kSplashFade = 0.8f;
 
 		std::atomic<bool> g_movieFailed{ false };  // the SWF didn't load this session
-
-		void QueueMain(std::function<void()> a_fn)
-		{
-			QueueTask(std::move(a_fn));
-		}
+		std::atomic<bool> g_fading{ false };       // Leaving(), for the input thread
 
 		// Vanilla menu sounds (the names Skyrim's own menus use).
 		void Sound(const char* a_name)
 		{
-			QueueMain([a_name]() { RE::PlaySound(a_name); });
+			QueueTask([a_name]() { RE::PlaySound(a_name); });
 		}
 
 		constexpr float kFadeOut = 0.45f;
@@ -133,6 +128,7 @@ namespace charselect
 			}
 			g_view.fadeOut = 0.0f;
 			g_view.afterFade = std::move(a_then);
+			g_fading = true;
 		}
 
 		// ---- GFx helpers ---------------------------------------------------
@@ -350,8 +346,6 @@ namespace charselect
 				return known ? static_cast<float>(std::strlen(text.GetString())) * 6.5f : 0.0f;
 			}
 
-			[[nodiscard]] RE::GFxMovieView* Movie() const { return _movie; }
-
 			// The whole visible area in stage coordinates: wider or taller than
 			// the 1280x720 stage when the screen's aspect differs (kShowAll).
 			[[nodiscard]] RE::GRectF Visible() const { return _movie->GetVisibleFrameRect(); }
@@ -379,7 +373,7 @@ namespace charselect
 				g_view.selected = a_slot;
 				g_view.needsBuild = true;
 				logger::debug("SelectMenu: selected slot {}", a_slot + 1);
-				QueueMain([a_slot]() { lobby::Highlight(a_slot); });
+				QueueTask([a_slot]() { lobby::Highlight(a_slot); });
 			}
 		}
 
@@ -391,38 +385,87 @@ namespace charselect
 			const auto slot = g_view.selected;
 			logger::info("SelectMenu: Play slot {} '{}'", slot + 1, g_view.slots[slot].name);
 			// The menu stays up (black) until the loading screen takes over.
-			FadeThen([slot]() { QueueMain([slot]() { lobby::Play(slot); }); });
+			FadeThen([slot]() { QueueTask([slot]() { lobby::Play(slot); }); });
 		}
 
 		void OpenLoad()
 		{
 			logger::info("SelectMenu: Load (vanilla)");
-			QueueMain([]() { frontend::OpenLoadMenu(); });
+			QueueTask([]() { frontend::OpenLoadMenu(); });
 		}
 
+		// The main menu actions, bottom right. Everything but ENTER is
+		// vanilla's own UI. (No Settings: they're often per save, and here
+		// they'd be the lobby's.)
+		struct MenuItem
+		{
+			const char* id;
+			const char* label;
+			void (*action)();
+		};
+		const std::array<MenuItem, 4> kMenuItems{ {
+			{ "newgame", "NEW GAME", []() { FadeThen([]() { QueueTask([]() { frontend::ReturnToMainMenu(frontend::Action::kNewGame); }); }); } },
+			{ "load", "LOAD", []() { OpenLoad(); } },
+			{ "mainmenu", "MAIN MENU", []() { FadeThen([]() { QueueTask([]() { frontend::ReturnToMainMenu(frontend::Action::kClassicMenu); }); }); } },
+			{ "quit", "QUIT", []() { FadeThen([]() { QueueTask([]() { frontend::Quit(); }); }); } },
+		} };
+
+		void FocusMenu(std::optional<std::size_t> a_item)
+		{
+			if (a_item != g_view.menuFocus) {
+				g_view.menuFocus = a_item;
+				g_view.needsBuild = true;
+				Sound("UIMenuFocus");
+			}
+		}
+
+		// Left and right choose a character. Down moves onto the menu list,
+		// up and down move through it, and up from its top entry (or B) goes
+		// back to the characters.
 		void HandleNav(SelectMenu::Nav a_nav)
 		{
 			using Nav = SelectMenu::Nav;
 			if (g_view.mode != Mode::kSelect) {
 				return;
 			}
+			const auto focus = g_view.menuFocus;
 			switch (a_nav) {
 			case Nav::kLeft:
 			case Nav::kRight:
+				if (focus) {
+					g_view.menuFocus.reset();
+					g_view.needsBuild = true;
+				}
 				if (const auto next = charselect::ui::StepSelection(g_view.order, g_view.selected, a_nav == Nav::kLeft ? -1 : 1)) {
 					Sound("UIMenuFocus");
 					Select(*next);
 				}
 				break;
+			case Nav::kDown:
+				FocusMenu(!focus ? 0 : (std::min)(*focus + 1, kMenuItems.size() - 1));
+				break;
+			case Nav::kUp:
+				if (focus) {
+					FocusMenu(*focus == 0 ? std::nullopt : std::optional(*focus - 1));
+				}
+				break;
+			case Nav::kBack:
+				if (focus) {
+					FocusMenu(std::nullopt);
+				}
+				break;
 			case Nav::kConfirm:
 				Sound("UIMenuOK");
-				DoPlay();
+				if (focus) {
+					logger::info("SelectMenu: {}", kMenuItems[*focus].label);
+					kMenuItems[*focus].action();
+				} else {
+					DoPlay();
+				}
 				break;
 			case Nav::kSaves:
 				Sound("UIMenuOK");
 				OpenLoad();
-				break;
-			default:
 				break;
 			}
 		}
@@ -435,7 +478,7 @@ namespace charselect
 				g_view.editTarget = a_target;
 				g_view.resetArmed = false;
 				g_view.needsBuild = true;
-				QueueMain([a_target]() { lobby::EditFocus(a_target); });
+				QueueTask([a_target]() { lobby::EditFocus(a_target); });
 			}
 		}
 
@@ -448,7 +491,7 @@ namespace charselect
 			g_view.resetArmed = false;
 			const float turn = a_turnDeg * RE::NI_PI / 180.0f;
 			const float tilt = a_tiltDeg * RE::NI_PI / 180.0f;
-			QueueMain([=]() { lobby::EditNudge(target, a_forward, a_right, a_up, turn, tilt); });
+			QueueTask([=]() { lobby::EditNudge(target, a_forward, a_right, a_up, turn, tilt); });
 		}
 
 		void EditCycle(lobby::EditField a_field, int a_dir)
@@ -458,17 +501,17 @@ namespace charselect
 				return;
 			}
 			g_view.resetArmed = false;
-			QueueMain([=]() { lobby::EditCycle(target, a_field, a_dir); });
+			QueueTask([=]() { lobby::EditCycle(target, a_field, a_dir); });
 		}
 
 		void EditSaveClose()
 		{
-			QueueMain([]() { lobby::CloseEditor(true); });
+			QueueTask([]() { lobby::CloseEditor(true); });
 		}
 
 		void EditCancel()
 		{
-			QueueMain([]() { lobby::CloseEditor(false); });
+			QueueTask([]() { lobby::CloseEditor(false); });
 		}
 
 		void HandleEditKey(SelectMenu::EditKey a_key)
@@ -549,11 +592,11 @@ namespace charselect
 		// Between the parts of a character's info line.
 		constexpr const char* kDot = "   \xC2\xB7   ";  // spaced middle dot (UTF-8)
 
-		// Plain text entry: grey, white with a soft glow on hover, Skyrim menu style.
+		// Plain text entry: grey, white with a soft glow on hover or focus, Skyrim menu style.
 		void AddLink(Ui& a_ui, RE::GFxValue& a_parent, int& a_depth, const std::string& a_id, const std::string& a_label,
-			float a_x, float a_y, float a_w, double a_size, const char* a_align, std::function<void()> a_action)
+			float a_x, float a_y, float a_w, double a_size, const char* a_align, std::function<void()> a_action, bool a_focused = false)
 		{
-			const bool  hover = g_view.hover == a_id;
+			const bool  hover = a_focused || g_view.hover == a_id;
 			const float h = static_cast<float>(a_size * 1.7);
 			auto        clip = a_ui.Clip(a_parent, ("link_" + a_id).c_str(), a_depth++);
 			a_ui.Text(clip, "label", 1, a_x, a_y, a_w, h, a_label, a_size, hover ? kWhite : kDim, a_align, true, 1.0);
@@ -828,7 +871,7 @@ namespace charselect
 			AddButton(a_ui, a_root, depth, "reset", g_view.resetArmed ? "CLICK AGAIN" : "RESET TO DEFAULT", x + (w + 8) / 2, ay, (w - 8) / 2, 28, []() {
 				if (g_view.resetArmed) {
 					g_view.resetArmed = false;
-					QueueMain([]() { lobby::EditResetCell(); });
+					QueueTask([]() { lobby::EditResetCell(); });
 				} else {
 					g_view.resetArmed = true;
 				}
@@ -862,23 +905,10 @@ namespace charselect
 			// menus, as plain entries; the button legend goes bottom-left. Both
 			// keep to the screen's edges on wider screens.
 			const auto vis = a_ui.Visible();
-			struct Item
-			{
-				const char*           id;
-				const char*           label;
-				std::function<void()> action;
-			};
-			// Everything but Play is vanilla's own UI.
-			// (No Settings: they're often per save, and here they'd be the lobby's.)
-			const std::array<Item, 4> items{ {
-				{ "newgame", "NEW GAME", []() { FadeThen([]() { QueueMain([]() { frontend::ReturnToMainMenu(frontend::Action::kNewGame); }); }); } },
-				{ "load", "LOAD", []() { OpenLoad(); } },
-				{ "mainmenu", "MAIN MENU", []() { FadeThen([]() { QueueMain([]() { frontend::ReturnToMainMenu(frontend::Action::kClassicMenu); }); }); } },
-				{ "quit", "QUIT", []() { FadeThen([]() { QueueMain([]() { frontend::Quit(); }); }); } },
-			} };
-			float y = 582;
-			for (const auto& item : items) {
-				AddLink(a_ui, a_root, depth, item.id, item.label, vis.right - 52.0f - 220.0f, y, 220, 14, "right", item.action);
+			float      y = 582;
+			for (std::size_t i = 0; i < kMenuItems.size(); ++i) {
+				const auto& item = kMenuItems[i];
+				AddLink(a_ui, a_root, depth, item.id, item.label, vis.right - 52.0f - 220.0f, y, 220, 14, "right", item.action, g_view.menuFocus == i);
 				y += 26;
 			}
 
@@ -902,19 +932,24 @@ namespace charselect
 				auto        play = a_ui.Clip(a_root, "play", depth++);
 				const float py = 630;
 				const float ruleW = hover ? 110.0f : 80.0f;
-				a_ui.Text(play, "label", 1, cx - 150, py, 300, 36, sl.ready || sl.placeholder ? "ENTER" : "LOADING", 24, hover ? kWhite : kText, "center", true, 6.0);
+				a_ui.Text(play, "label", 1, cx - 150, py, 300, 36, sl.ready || sl.placeholder || sl.failed ? "ENTER" : "LOADING", 24, hover ? kWhite : kText,
+					"center", true, 6.0);
 				a_ui.Rule(play, cx - 70 - ruleW / 2.0f, py + 18, ruleW, hover ? 90.0 : 45.0);
 				a_ui.Rule(play, cx + 70 + ruleW / 2.0f, py + 18, ruleW, hover ? 90.0 : 45.0);
 				a_ui.Glow(play, kWhite, hover ? 0.6 : 0.25, hover ? 10.0 : 6.0, hover ? 1.6 : 1.0);
 				g_view.hits.push_back({ cx - 190, py - 4, 380, 44, "play", []() { DoPlay(); } });
 			}
 
+			std::vector<LegendItem> legend;
 			if (g_view.gamepad) {
-				BuildLegend(a_ui, a_root, "legend", depth++, vis.left + 52.0f, 688.0f, { { { "dpad" }, "Choose" }, { { "pad:A" }, "Play" }, { { "pad:X" }, "Load" } });
+				legend = g_view.menuFocus ? std::vector<LegendItem>{ { { "dpad" }, "Choose" }, { { "pad:A" }, "Select" }, { { "pad:B" }, "Back" } } :
+				                            std::vector<LegendItem>{ { { "dpad" }, "Choose" }, { { "pad:A" }, "Enter" }, { { "pad:X" }, "Load" } };
 			} else {
-				BuildLegend(a_ui, a_root, "legend", depth++, vis.left + 52.0f, 688.0f,
-					{ { { "<", ">" }, "Choose" }, { { "Enter" }, "Play" }, { { "S" }, "Load" }, { { "F8" }, "Layout" } });
+				legend = g_view.menuFocus ? std::vector<LegendItem>{ { { "^", "v" }, "Choose" }, { { "Enter" }, "Select" } } :
+				                            std::vector<LegendItem>{ { { "<", ">" }, "Choose" }, { { "v" }, "Menu" }, { { "Enter" }, "Enter" },
+												{ { "S" }, "Load" }, { { "F8" }, "Layout" } };
 			}
+			BuildLegend(a_ui, a_root, "legend", depth++, vis.left + 52.0f, 688.0f, legend);
 		}
 
 		void Build(RE::GFxMovieView* a_movie)
@@ -1057,11 +1092,6 @@ namespace charselect
 				const auto& rd = cursor->GetRuntimeData();
 				cx = a_map.visLeft + (rd.cursorPosX - a_map.vpLeft) / a_map.vpW * a_map.visW;
 				cy = a_map.visTop + (rd.cursorPosY - a_map.vpTop) / a_map.vpH * a_map.visH;
-				if (g_view.cursorLogs < 5) {
-					++g_view.cursorLogs;
-					logger::debug("SelectMenu: cursor screen ({:.0f}, {:.0f}) -> stage ({:.0f}, {:.0f}); viewport {}x{}+{}+{} visible {:.0f}x{:.0f}",
-						rd.cursorPosX, rd.cursorPosY, cx, cy, a_map.vpW, a_map.vpH, a_map.vpLeft, a_map.vpTop, a_map.visW, a_map.visH);
-				}
 			}
 			g_view.cursorX = cx;
 			g_view.cursorY = cy;
@@ -1084,8 +1114,8 @@ namespace charselect
 		}
 
 		// Plates are looked up by path each frame rather than kept: a handle kept
-		// past a frame was released in the menu's destructor after its movie
-		// had gone (crash after a cancelled LOAD, 0.5.24).
+		// past a frame is released in the menu's destructor after its movie has
+		// gone (a crash after a cancelled LOAD).
 		void UpdatePlates(RE::GFxMovieView* a_movie, const StageMapping& a_map)
 		{
 			g_view.actorHits.clear();
@@ -1100,8 +1130,8 @@ namespace charselect
 				std::optional<RE::NiPoint3> where;
 				if (ref && slot.ready && !ref->IsDisabled()) {
 					where = ref->GetPosition();
-				} else if (slot.placeholder) {
-					where = slot.pos;  // its stand-in failed to appear
+				} else if (slot.placeholder || slot.failed) {
+					where = slot.pos;  // the character couldn't be shown; the plate marks the spot
 				}
 				if (where) {
 					const auto feet = *where;
@@ -1257,6 +1287,11 @@ namespace charselect
 		return g_movieFailed;
 	}
 
+	bool SelectMenu::IsFading()
+	{
+		return g_fading;
+	}
+
 	bool SelectMenu::IsOpen()
 	{
 		auto* ui = RE::UI::GetSingleton();
@@ -1301,6 +1336,7 @@ namespace charselect
 		}
 
 		g_view = View{};
+		g_fading = false;
 		std::scoped_lock lock(g_shared.lock);
 		g_shared.dirty = true;
 	}
@@ -1360,6 +1396,7 @@ namespace charselect
 					g_view.fadeOut = -1.0f;
 					g_view.blackout = false;
 					g_view.afterFade = {};
+					g_fading = false;
 				}
 				g_view.mode = g_shared.mode;
 				if (g_view.mode == Mode::kEdit) {
@@ -1400,9 +1437,11 @@ namespace charselect
 			const auto fresh = lobby::GetSlotStatus();
 			if (fresh.size() == g_view.slots.size()) {
 				for (std::size_t i = 0; i < fresh.size(); ++i) {
-					if (fresh[i].first != g_view.slots[i].ready) {
-						g_view.slots[i].ready = fresh[i].first;
-						g_view.slots[i].ref = fresh[i].second;
+					auto& slot = g_view.slots[i];
+					if (fresh[i].ready != slot.ready || fresh[i].failed != slot.failed) {
+						slot.ready = fresh[i].ready;
+						slot.failed = fresh[i].failed;
+						slot.ref = fresh[i].ref;
 						g_view.needsBuild = true;
 					}
 				}

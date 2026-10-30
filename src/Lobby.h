@@ -20,16 +20,6 @@ namespace charselect::lobby
 {
 	// State and StateName come from core/LobbyRules.h.
 
-	struct SaveEntry
-	{
-		std::string   file;  // with .ess
-		std::string   stem;
-		std::uint32_t level{ 0 };
-		std::string   location;
-		std::string   when;  // "2026-10-13 20:48:15"
-		std::string   saveType;
-	};
-
 	// What the menu shows for one character.
 	struct SlotView
 	{
@@ -38,8 +28,9 @@ namespace charselect::lobby
 		std::string            race;
 		std::string            location;
 		std::string            lastPlayed;
-		std::vector<SaveEntry> saves;  // newest first
+		std::string            latestSave;  // file name with .ess, what ENTER loads
 		bool                   ready{ false };
+		bool                   failed{ false };  // their look couldn't be shown; still playable
 		RE::ObjectRefHandle    ref;
 		float                  lateral{ 0.0f };  // left (-) / right (+) of the camera, for card order
 		RE::NiPoint3           pos;              // where the character stands (its spot)
@@ -48,12 +39,19 @@ namespace charselect::lobby
 
 	[[nodiscard]] State                 GetState();
 	[[nodiscard]] std::vector<SlotView> GetSlots();
-	// Cheap per-frame query for the menu: readiness and reference per slot.
-	[[nodiscard]] std::vector<std::pair<bool, RE::ObjectRefHandle>> GetSlotStatus();
+	// Cheap per-frame query for the menu.
+	struct SlotStatus
+	{
+		bool                ready{ false };
+		bool                failed{ false };
+		RE::ObjectRefHandle ref;
+	};
+	[[nodiscard]] std::vector<SlotStatus> GetSlotStatus();
 
 	// All of these run under GameLock (Util.h): from SKSE messages, menu
 	// events or tasks.
 	void RequestEnter();  // from the main menu; with no characters, the failure handler runs
+	void OnLoadingMenuOpened();
 	void OnLoadingMenuClosed();
 	void OnPreLoadGame();
 	// Any lobby game is over once the main menu is back (e.g. after New Game
@@ -64,7 +62,8 @@ namespace charselect::lobby
 	[[nodiscard]] bool LoadFailedRecently();
 	void               ClearLoadFailure();
 	void OnPostLoadGame(bool a_success);
-	void OnJournalClosed();  // brings the select screen back after a cancelled LOAD
+	void OnLoadListOpened();  // LOAD: the Journal opens over the lobby
+	void OnJournalClosed();   // brings the select screen back after a cancelled LOAD
 	void OnNewGame();        // SKSE NewGame: blocks saving in the lobby's game at once
 	// An object's 3D loaded (TESObjectLoadedEvent): anyone arriving in the
 	// lobby is hidden at once instead of at the next sweep.
@@ -100,6 +99,7 @@ namespace charselect::lobby
 		kSelect,
 		kSeat,
 	};
+	[[nodiscard]] bool                    IsRevealed();  // the select screen has replaced the splash
 	[[nodiscard]] bool                    IsEditorOpen();
 	[[nodiscard]] std::vector<EditTarget> GetEditTargets();  // any thread
 	void                                  OpenEditor();
@@ -117,13 +117,20 @@ namespace charselect::lobby
 	// automatically (the lobby is a throwaway game).
 	[[nodiscard]] bool ShouldDismissMessageBoxes();
 
-	// Undoes lobby-only changes before leaving the lobby another way
-	// (back to the main menu). Safe to call more than once.
+	// The lobby's game is ending (MAIN MENU, NEW GAME, QUIT, or the Journal's
+	// Quit): nothing in the lobby acts on its world any more, and the main
+	// menu forgets it.
+	void BeginLeaving(std::string_view a_why);
+
+	// Gives the player back saving, controls, the HUD and the game's own
+	// weather: at the main menu, as a save loads, and on quitting. Safe to
+	// call more than once.
 	void Teardown();
 
 	// RaceMenu keeps the lobby faces mapped by actor base pointer and never
 	// clears them on load (its Revert is empty); a recycled pointer in the next
-	// game could pick one up. Clears them, then runs a_then as a task.
+	// game could pick one up. Clears them, then runs a_then as a task (after
+	// a timeout if RaceMenu doesn't answer).
 	void ClearPresets(std::function<void()> a_then = {});
 	// Drops every lobby character's link to their furniture. Call before the
 	// lobby's game is torn down (a load, or back to the main menu): a link

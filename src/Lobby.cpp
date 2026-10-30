@@ -9,6 +9,7 @@
 #include "Layout.h"
 #include "Paths.h"
 #include "Poses.h"
+#include "ResetGuard.h"
 #include "SelectMenu.h"
 #include "Tint.h"
 #include "Util.h"
@@ -30,15 +31,18 @@ namespace charselect::lobby
 
 		// After the loading screen closes, wait for the player to be settled in
 		// the lobby cell before staging (the first close comes before coc has
-		// finished placing the player). TrySpawn polls for that itself; 1.5 s
-		// here waited on a player who was ready at once (0.5.6 log).
+		// finished placing the player). TrySpawn polls for that itself, so this
+		// first wait is short.
 		constexpr auto kSettleDelay = std::chrono::milliseconds(500);
 		constexpr auto kReadyPollInterval = std::chrono::milliseconds(250);
 		constexpr int  kReadyPollMax = 40;                            // 10 s
-		constexpr auto kEnterWatchdog = std::chrono::seconds(30);     // coc never loaded anything
+		constexpr auto kEnterWatchdog = std::chrono::seconds(30);     // coc never got past its loading screen
+		constexpr auto kNoCellGrace = std::chrono::seconds(2);        // coc returned without a loading screen: no such cell
+		constexpr auto kClearPresetsTimeout = std::chrono::seconds(10);
+		constexpr float kMovedAway = 1000.0f;  // the player this far from the camera has been moved
 		constexpr auto kRevealTimeout = std::chrono::seconds(10);     // show the menu even if a slot is slow
 		constexpr auto kRevealSettle = std::chrono::milliseconds(500);  // poses in place -> let idles blend in, then show
-		constexpr auto kFreezeDelay = std::chrono::milliseconds(600);  // let actors settle on the floor first (was 1.2 s)
+		constexpr auto kFreezeDelay = std::chrono::milliseconds(600);  // let actors settle on the floor first
 
 		// The game-free code (core/) uses Vec3.
 		Vec3         ToVec(const RE::NiPoint3& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -83,6 +87,8 @@ namespace charselect::lobby
 		std::string       g_targetCell;
 		bool              g_triedFallback{ false };
 		bool              g_spawnScheduled{ false };
+		std::atomic<bool> g_loadingScreenSeen{ false };  // since the last coc
+		bool              g_loadingWhileActive{ false };  // a loading screen opened with the select screen up
 		std::atomic<bool> g_revealed{ false };
 		bool              g_revealScheduled{ false };
 		bool              g_hudHidden{ false };
@@ -103,8 +109,7 @@ namespace charselect::lobby
 		std::function<void(std::string_view, bool)> g_onFailure;
 		std::function<void()>                 g_onReady;
 
-		void  TrySpawn(std::uint32_t a_generation, int a_attempt);
-		float WrapAngle(float a_rad);
+		void TrySpawn(std::uint32_t a_generation, int a_attempt);
 
 		void SetState(State a_state)
 		{
@@ -134,8 +139,8 @@ namespace charselect::lobby
 		// Game.SetInChargen(abDisableSaving) sets, written directly so it is
 		// cleared synchronously before any real save loads.
 		// The player is the lobby's camera, so its gameplay controls are off
-		// while the lobby is up: Ctrl sneaked and right-click drew a weapon
-		// (0.5.19). The game menu and the console stay on. Same lifecycle as
+		// while the lobby is up: Ctrl sneaked and right-click drew a weapon.
+		// The game menu and the console stay on. Same lifecycle as
 		// BlockSaving: back on before any load and on leaving the lobby.
 		constexpr auto kLobbyControls = static_cast<RE::UserEvents::USER_EVENT_FLAG>(
 			std::to_underlying(RE::UserEvents::USER_EVENT_FLAG::kMovement) | std::to_underlying(RE::UserEvents::USER_EVENT_FLAG::kLooking) |
@@ -183,9 +188,24 @@ namespace charselect::lobby
 			// Saving stays off: the lobby game may still be running. The main
 			// menu (where a failure leads) turns it back on.
 			SetState(State::kIdle);
+			++g_enterGeneration;  // nothing the failed lobby scheduled runs on
 			if (g_onFailure) {
 				// The technical reason is in the log; players get a plain message.
 				g_onFailure("Could not load the character select screen. See CharSelect.log for details.", false);
+			}
+		}
+
+		// Runs a step of starting the lobby; an error in it fails the lobby,
+		// instead of leaving the loading splash up for good.
+		template <class F>
+		void OrFail(std::string_view a_step, F&& a_fn)
+		{
+			try {
+				std::forward<F>(a_fn)();
+			} catch (const std::exception& e) {
+				Fail(std::format("{}: unexpected error: {}", a_step, e.what()));
+			} catch (...) {
+				Fail(std::format("{}: unexpected error", a_step));
 			}
 		}
 
@@ -269,11 +289,14 @@ namespace charselect::lobby
 
 			auto*      dh = RE::TESDataHandler::GetSingleton();
 			const auto max = config::Get().maxCharacters;
+			if (scan.characters.size() > max) {
+				logger::info("Lobby: showing the {} most recently played (iMaxCharacters)", max);
+			}
 			for (const auto& character : scan.characters) {
 				const auto  id = FormatCharacterId(character.characterId);
 				const auto& latest = character.Latest();
 				if (slots.size() >= max) {
-					logger::info("Lobby:   {} '{}' - more than {} characters, not shown", id, latest.header.playerName, max);
+					logger::debug("Lobby:   {} '{}' not shown", id, latest.header.playerName);
 					continue;
 				}
 
@@ -282,9 +305,10 @@ namespace charselect::lobby
 				auto        data = sidecar::Read(character.characterId);
 				RE::TESRace* race = nullptr;
 				std::string  missing;
+				std::error_code ec;
 				if (!data) {
-					missing = "no sidecar yet (load and save once to capture)";
-				} else if (!std::filesystem::exists(paths::PresetPath(character.characterId))) {
+					missing = "not loaded or saved with CharSelect installed yet";
+				} else if (!std::filesystem::exists(paths::PresetPath(character.characterId), ec)) {
 					missing = std::format("no RaceMenu preset at {}", paths::ForLog(paths::PresetPath(character.characterId)));
 				} else if (race = dh ? dh->LookupForm<RE::TESRace>(data->race.localId, text::FromUtf8(data->race.plugin)) : nullptr; !race) {
 					missing = std::format("race {}:{:08X} not loaded", data->race.plugin, data->race.localId);
@@ -314,11 +338,7 @@ namespace charselect::lobby
 				}
 				slot.view.location = latest.header.playerLocation;
 				slot.view.lastPlayed = FormatFileTime(latest.header.fileTime);
-				for (const auto& save : character.saves) {
-					slot.view.saves.push_back(SaveEntry{
-						text::FromUtf8(text::PathUtf8(save.path.filename())), save.stem, save.header.playerLevel, save.header.playerLocation,
-						FormatFileTime(save.header.fileTime), save.name.saveType });
-				}
+				slot.view.latestSave = text::FromUtf8(text::PathUtf8(latest.path.filename()));
 				if (data) {
 					slot.data = std::move(*data);
 				}
@@ -385,7 +405,7 @@ namespace charselect::lobby
 			// head part array and writes into face/head data, so this base gets
 			// its own copies. They must never be null: placing the actor queues
 			// its head build on a worker thread, which can run before RaceMenu's
-			// preset and reads faceData->parts (0.2.1 crashed on exactly that).
+			// preset and reads faceData->parts (a null one crashes the game).
 			if (npc->headParts && npc->numHeadParts > 0) {
 				const auto count = static_cast<std::size_t>(npc->numHeadParts);
 				auto*      parts = RE::calloc<RE::BGSHeadPart*>(count);
@@ -455,8 +475,8 @@ namespace charselect::lobby
 		{
 			// Moving an actor in furniture leaves it sitting in mid-air. Anyone
 			// else goes to its spot, seated slots included: moving a disabled
-			// actor doesn't stick, and 0.3.4-0.4.2 skipped seated slots once
-			// enabled, so they started at the camera and walked to the far seat.
+			// actor doesn't stick, and a seated slot left where it was enabled
+			// starts at the camera and walks all the way to its seat.
 			if (poses::InFurniture(a_actor)) {
 				logger::debug("Lobby: {:08X} is in furniture, not moving it", a_actor->GetFormID());
 				return;
@@ -576,6 +596,12 @@ namespace charselect::lobby
 			if (g_onReady) {
 				g_onReady();
 			}
+			if (g_triedFallback) {
+				RE::DebugMessageBox(std::format("CharSelect: The location set in CharSelect.ini (sLobbyCell = {}) couldn't be loaded, so another one "
+												"is shown. Check its spelling, and that the mod it comes from is installed.",
+					config::Get().lobbyCell)
+										.c_str());
+			}
 		}
 
 		// The splash stays up until every character is in its pose (seated
@@ -615,6 +641,10 @@ namespace charselect::lobby
 		void FinishSlotFailed(std::size_t a_index, std::string_view a_why)
 		{
 			if (a_index < g_slots.size()) {
+				{
+					std::scoped_lock lock(g_lock);
+					g_slots[a_index].view.failed = true;
+				}
 				g_slots[a_index].finished = true;
 				logger::error("Lobby: slot {} '{}' failed: {}", a_index + 1, g_slots[a_index].data.name, a_why);
 			}
@@ -682,10 +712,10 @@ namespace charselect::lobby
 			RunAfter(kFreezeDelay, [a_generation, a_index]() { FreezeSlot(a_generation, a_index); });
 		}
 
-		// RaceMenu can leave out saved head parts it should apply: on the
-		// user's setup a hair from a light plugin (KS Hairdos SMP) became a
-		// race default, though the part is found by plugin name and passes
-		// RaceMenu's own sex and race rules (0.9.9). Any such part goes on
+		// RaceMenu can leave out saved head parts it should apply: a hair from
+		// a light (ESL-flagged) plugin has been seen to become a race default,
+		// though the part is found by plugin name and passes RaceMenu's own
+		// sex and race rules. Any such part goes on
 		// here, through the engine call RaceMenu itself uses, while the actor
 		// is still disabled and before its head is built.
 		void AddMissingParts(std::size_t a_index, const Slot& a_slot)
@@ -735,8 +765,8 @@ namespace charselect::lobby
 			}
 			actor->Enable(false);
 			// AI on from the first frame, so its idle is running long before
-			// the menu shows (0.3.3: a second of reference pose after the
-			// splash). Its base's own top package (poses::PrepareBase) keeps it
+			// the menu shows (otherwise a second of reference pose shows after
+			// the splash). Its base's own top package (poses::PrepareBase) keeps it
 			// here or seats it; without one, the default sandbox walked it off.
 			actor->EnableAI(true);
 			PlaceSlot(actor, slot);
@@ -750,8 +780,8 @@ namespace charselect::lobby
 
 		// Furniture placed for the lobby loads its 3D a moment after it is
 		// enabled; spawn its character once it has, so the engine can put the
-		// character straight into it (0.3.6: the bedroll wasn't loaded yet,
-		// so the sleeper had to walk over, and got stuck on the bench).
+		// character straight into it (with the furniture not loaded yet, the
+		// character walks over to it, and can get stuck on the way).
 		void SpawnSlotWhenFurnitureReady(std::uint32_t a_generation, std::size_t a_index, int a_attempt)
 		{
 			if (a_generation != g_enterGeneration || g_state != State::kActive || a_index >= g_slots.size()) {
@@ -811,7 +841,7 @@ namespace charselect::lobby
 			if (slot.placeholder) {
 				// No preset to apply: the copied base already has a whole head.
 				// Enabled a moment later, not now: enabling in the same frame as
-				// the Disable() above left it disabled for good (0.5.9).
+				// the Disable() above leaves it disabled for good.
 				RunAfter(kReadyPollInterval, [generation, a_index]() { OnPresetApplied(generation, a_index, true); });
 				return;
 			}
@@ -838,8 +868,8 @@ namespace charselect::lobby
 		}
 
 		// Hides the cell's own NPCs. NPCs keep their schedules in the lobby
-		// game, so anyone walking in later (Sigurd, 0.3.4) has to be hidden
-		// too: at once when their 3D loads (OnObjectLoaded), and by a sweep
+		// game, so anyone walking in later has to be hidden too: at once when
+		// their 3D loads (OnObjectLoaded), and by a sweep
 		// every half second for anyone that misses.
 		// Outdoors the game keeps several cells loaded around the player, so
 		// "the lobby" is everything within this distance instead of one cell.
@@ -901,22 +931,34 @@ namespace charselect::lobby
 				return RE::BSContainer::ForEachResult::kContinue;
 			});
 			if (hidden > 0) {
-				logger::info("Lobby: hid {} other actors: {}", hidden, names);
+				logger::info("Lobby: hid {} other actor(s)", hidden);
+				logger::debug("Lobby:   {}", names);
 			}
 			return hidden;
 		}
 
 		constexpr auto kKeepClearInterval = std::chrono::milliseconds(500);
 
+		// The game is going back to the main menu (MAIN MENU, or the Journal's
+		// Quit): the engine sets this before it tears the lobby's world down.
+		bool GameResetting()
+		{
+			auto* main = RE::Main::GetSingleton();
+			return main && main->GetRuntimeData().resetGame;
+		}
+
 		void KeepCellClear(std::uint32_t a_generation)
 		{
 			if (a_generation != g_enterGeneration || g_state != State::kActive) {
 				return;
 			}
+			if (GameResetting()) {
+				BeginLeaving("the game is going back to the main menu");
+				return;
+			}
 			HideOtherActors();
 			RunAfter(kKeepClearInterval, [a_generation]() { KeepCellClear(a_generation); });
 		}
-
 
 		// Layouts are stored under the location the lobby was started in
 		// (sLobbyCell, or the fallback): outdoors the player can stand in a
@@ -926,17 +968,11 @@ namespace charselect::lobby
 			return g_targetCell;
 		}
 
-		std::string CellId(RE::TESObjectCELL* a_cell)
-		{
-			const char* id = a_cell ? a_cell->GetFormEditorID() : nullptr;
-			return id ? id : "";
-		}
-
 		// Drops the slot actor's link to its furniture. A link must never
 		// outlive its target: when the actor is destroyed, the engine reads the
 		// target to unregister the link, and a freed target crashes the game
-		// (0.5.37: a load from the Ragged Flagon freed the cell's chairs before
-		// the seated characters). So: unlink before deleting furniture we
+		// (a load from the lobby can free the cell's chairs before the
+		// characters seated on them). So: unlink before deleting furniture we
 		// placed, and before the lobby's world goes away (UnlinkSeats).
 		void Unlink(const Slot& a_slot)
 		{
@@ -956,7 +992,7 @@ namespace charselect::lobby
 			// Already there: reloading it would throw its sitter out (a re-layout
 			// for another slot's pose change).
 			if (existing && existing->GetBaseObject() == a_base && !existing->IsDisabled() && existing->GetPosition().GetDistance(a_slot.pos) < 1.0f &&
-				std::abs(WrapAngle(existing->GetAngleZ() - a_slot.heading)) < 0.01f) {
+				std::abs(geometry::WrapAngle(existing->GetAngleZ() - a_slot.heading)) < 0.01f) {
 				return a_slot.placedFurniture;
 			}
 			if (existing && existing->GetBaseObject() != a_base) {
@@ -987,7 +1023,7 @@ namespace charselect::lobby
 
 		// A spot just in front of one of a_furniture's sit markers, facing the
 		// way a sitter faces, so the sit package seats its character on the
-		// spot (0.5.3: a new seat across the room meant a walk over).
+		// spot instead of walking it over.
 		// Prefers the seat nearest a_near if one is close, otherwise the one
 		// nearest the stage; a_taken lists markers other slots already use.
 		std::optional<SeatSpot> FindSeatSpot(RE::TESObjectREFR* a_furniture, const RE::NiPoint3& a_near, const std::vector<std::uint32_t>& a_taken)
@@ -1005,7 +1041,7 @@ namespace charselect::lobby
 					continue;
 				}
 				const auto  seat = root->world * marker.offset;
-				const float heading = WrapAngle(baseHeading + marker.heading);
+				const float heading = geometry::WrapAngle(baseHeading + marker.heading);
 				logger::debug("Lobby:   furniture {:08X} sit marker {} at ({:.0f}, {:.0f}, {:.0f}) heading {:.2f}", a_furniture->GetFormID(), i, seat.x,
 					seat.y, seat.z, heading);
 				seats.push_back({ geometry::SeatFront(ToVec(seat), heading, a_furniture->GetPositionZ()), heading, i });
@@ -1161,34 +1197,66 @@ namespace charselect::lobby
 			return id && _stricmp(id, std::string(a_editorId).c_str()) == 0;
 		}
 
-		void          TryFallbackOrFail(std::string_view a_reason);
-		std::uint32_t g_cocTicket{ 0 };
+		void                       TryFallbackOrFail(std::string_view a_reason);
+		std::atomic<std::uint32_t> g_cocTicket{ 0 };
 
-		// Each coc gets its own watchdog, so a fallback cell tried late still
-		// gets the full time to load.
+		bool CocCurrent(std::uint32_t a_ticket, std::uint32_t a_generation)
+		{
+			return a_ticket == g_cocTicket && a_generation == g_enterGeneration && g_state == State::kEntering;
+		}
+
+		// Gives up on a coc whose loading screen never finished; one still
+		// loading (a big load order, a slow drive) gets more time. Each coc
+		// has its own, so a fallback cell gets the full time too.
+		void WatchCoc(std::uint32_t a_ticket, std::uint32_t a_generation)
+		{
+			RunAfter(kEnterWatchdog, [a_ticket, a_generation]() {
+				if (!CocCurrent(a_ticket, a_generation) || g_spawnScheduled) {
+					return;
+				}
+				auto* ui = RE::UI::GetSingleton();
+				if (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) {
+					logger::info("Lobby: still loading '{}' after {} s; waiting", g_targetCell, kEnterWatchdog.count());
+					WatchCoc(a_ticket, a_generation);
+					return;
+				}
+				LogPlayer("watchdog");
+				TryFallbackOrFail(std::format("'{}' never finished loading", g_targetCell));
+			});
+		}
+
 		void IssueCoc(std::string_view a_cell)
 		{
 			g_targetCell = std::string(a_cell);
 			g_spawnScheduled = false;
+			g_loadingScreenSeen = false;
 			const auto ticket = ++g_cocTicket;
 			const auto generation = g_enterGeneration;
 			// Outside GameLock: coc loads the cell before it returns, and the
 			// menu events and tasks of that load take the lock on other threads.
-			QueueTaskUnlocked([command = std::format("coc {}", a_cell), ticket]() {
-				if (!RunConsoleCommand(command)) {
-					QueueTask([ticket]() {
-						if (ticket == g_cocTicket && g_state == State::kEntering) {
-							Fail("console command failed");
+			QueueTaskUnlocked([command = std::format("coc {}", a_cell), ticket, generation]() {
+				if (!CocCurrent(ticket, generation)) {
+					return;  // the lobby was abandoned or failed before this ran
+				}
+				const bool ran = RunConsoleCommand(command);
+				QueueTask([ran, ticket, generation]() {
+					if (!CocCurrent(ticket, generation)) {
+						return;
+					}
+					if (!ran) {
+						Fail("console command failed");
+						return;
+					}
+					// coc returns once its cell has loaded; with no loading screen
+					// at all, the game had no cell by that name.
+					RunAfter(kNoCellGrace, [ticket, generation]() {
+						if (CocCurrent(ticket, generation) && !g_loadingScreenSeen) {
+							TryFallbackOrFail(std::format("no cell named '{}'", g_targetCell));
 						}
 					});
-				}
+				});
 			});
-			RunAfter(kEnterWatchdog, [ticket, generation]() {
-				if (ticket == g_cocTicket && generation == g_enterGeneration && g_state == State::kEntering && !g_spawnScheduled) {
-					LogPlayer("watchdog");
-					TryFallbackOrFail("no loading screen after coc (bad cell editor ID?)");
-				}
-			});
+			WatchCoc(ticket, generation);
 		}
 
 		void TryFallbackOrFail(std::string_view a_reason)
@@ -1292,7 +1360,7 @@ namespace charselect::lobby
 				return;
 			}
 			g_spawnScheduled = false;
-			StageLobby(player);
+			OrFail("staging the lobby", [player]() { StageLobby(player); });
 		}
 
 		// Notifications mods send while starting up in the lobby go to the
@@ -1325,6 +1393,11 @@ namespace charselect::lobby
 		// succeeds. A main menu soon after means the load failed (loop breaker).
 		rules::LoadFailureTracker g_loadAttempt;
 		bool                      g_loadStarted{ false };  // PreLoadGame seen since LoadFile
+		// The load list (the Journal) took ResetGuard's capture as it opened:
+		// quitting to the main menu from there leaves the lobby's game without
+		// PreLoadGame or MAIN MENU. Dropped again if it closes without either.
+		bool g_loadListCapture{ false };
+		bool g_loadSinceLoadList{ false };
 
 		// The lobby is over (a load into a real game, the main menu, a load
 		// while entering): forget it, and make every delayed callback stale.
@@ -1336,6 +1409,7 @@ namespace charselect::lobby
 			}
 			g_spawnScheduled = false;
 			g_editorOpen = false;
+			g_loadListCapture = false;
 			g_light.reset();
 			g_lightBase = nullptr;
 			g_highlighted = 0;
@@ -1357,8 +1431,7 @@ namespace charselect::lobby
 		}
 
 		// Back to a working lobby after a load that didn't happen: undoes what
-		// LoadFile stopped (0.5.18 came back without poses, without the
-		// NPC-clearing timer, and with the HUD showing).
+		// LoadFile stopped (the poses, the NPC-clearing timer, the hidden HUD).
 		void ResumeLobby()
 		{
 			SetState(State::kActive);
@@ -1416,8 +1489,8 @@ namespace charselect::lobby
 			g_loadAttempt.Started(std::chrono::steady_clock::now());
 			poses::Reset(false);  // a cancelled load resumes this lobby
 			// Now, not at PreLoadGame: by then the characters' links can no
-			// longer be found (0.5.38's log), though the world is still freed
-			// after it. ResumeLobby links them again.
+			// longer be found, though the world is still freed after it.
+			// ResumeLobby links them again.
 			UnlinkSeats();
 			// Saving, controls and the HUD stay as they are until the load
 			// actually starts (OnPreLoadGame): ClearPresets is a Papyrus round
@@ -1442,7 +1515,7 @@ namespace charselect::lobby
 					return;
 				}
 				// CommonLib calls this flag a_checkForMods, and its one-argument
-				// Load passes true, but what it does (seen in game, 0.5.21): true
+				// Load passes true, but what it does (seen in game): true
 				// loads without the missing-content prompt (a documented
 				// limitation); false abandons the load and returns to the main
 				// menu, which looped with the lobby re-entering. So it reads as
@@ -1473,13 +1546,13 @@ namespace charselect::lobby
 		return out;
 	}
 
-	std::vector<std::pair<bool, RE::ObjectRefHandle>> GetSlotStatus()
+	std::vector<SlotStatus> GetSlotStatus()
 	{
-		std::scoped_lock                                  lock(g_lock);
-		std::vector<std::pair<bool, RE::ObjectRefHandle>> out;
+		std::scoped_lock        lock(g_lock);
+		std::vector<SlotStatus> out;
 		out.reserve(g_slots.size());
 		for (const auto& s : g_slots) {
-			out.emplace_back(s.view.ready, s.view.ref);
+			out.push_back({ s.view.ready, s.view.failed, s.view.ref });
 		}
 		return out;
 	}
@@ -1502,7 +1575,15 @@ namespace charselect::lobby
 		}
 		logger::info("Lobby: enter requested");
 
-		auto slots = CollectSlots();
+		std::vector<Slot> slots;
+		bool              read = false;
+		OrFail("reading the saves", [&]() {
+			slots = CollectSlots();
+			read = true;
+		});
+		if (!read) {
+			return;
+		}
 		if (slots.empty()) {
 			if (g_onFailure) {
 				g_onFailure("No saved characters found.", true);
@@ -1515,6 +1596,7 @@ namespace charselect::lobby
 		}
 		++g_enterGeneration;
 		g_triedFallback = false;
+		g_loadingWhileActive = false;
 		g_revealed = false;
 		g_revealScheduled = false;
 		g_editorOpen = false;
@@ -1531,6 +1613,21 @@ namespace charselect::lobby
 
 	void OnLoadingMenuClosed()
 	{
+		if (g_state == State::kActive) {
+			if (!std::exchange(g_loadingWhileActive, false)) {
+				return;  // the coc's own loading screen, closing late
+			}
+			// A loading screen while the select screen is up: a mod's script
+			// moved the player (an intro or alternate start running late, for
+			// example). If they're no longer at the camera, the lobby can't go
+			// on, and the main menu is the way back.
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (player && player->GetPosition().GetDistance(g_stage.camera) > kMovedAway) {
+				LogPlayer("after a loading screen in the lobby");
+				Fail("the player was moved out of the lobby by a loading screen (another mod's script?)");
+			}
+			return;
+		}
 		if (g_state != State::kEntering) {
 			return;
 		}
@@ -1538,8 +1635,8 @@ namespace charselect::lobby
 		// The lobby game is running: no saving from here on.
 		BlockSaving(true);
 		// The engine closes our menu when the loading screen opens; cover the
-		// scene again until everyone is in place (0.3.4 showed actors popping
-		// in and getting dressed for ~3.7 s).
+		// scene again until everyone is in place (otherwise actors are seen
+		// popping in and getting dressed).
 		if (!SelectMenu::IsOpen()) {
 			SelectMenu::ShowSplash("Loading characters");
 		}
@@ -1553,14 +1650,14 @@ namespace charselect::lobby
 
 	void Play(std::size_t a_slot)
 	{
-		if (!rules::CanPlay(g_state, a_slot, g_slots.size(), a_slot < g_slots.size() && !g_slots[a_slot].view.saves.empty())) {
+		if (!rules::CanPlay(g_state, a_slot, g_slots.size(), a_slot < g_slots.size() && !g_slots[a_slot].view.latestSave.empty())) {
 			logger::info("Lobby: Play on invalid slot {} (state {})", a_slot + 1, StateName(g_state));
 			if (g_state == State::kActive) {
 				SelectMenu::ShowSelect();  // back from the fade to black
 			}
 			return;
 		}
-		LoadFile(g_slots[a_slot].view.saves.front().file, g_slots[a_slot].data.name);
+		LoadFile(g_slots[a_slot].view.latestSave, g_slots[a_slot].data.name);
 	}
 
 	namespace
@@ -1569,16 +1666,6 @@ namespace charselect::lobby
 		std::vector<EditTarget> g_editTargets;  // snapshot for the menu (UI thread), under g_lock
 
 		constexpr auto kReseatDelay = std::chrono::milliseconds(700);
-
-		float WrapAngle(float a_rad)
-		{
-			return geometry::WrapAngle(a_rad);
-		}
-
-		int Degrees(float a_rad)
-		{
-			return geometry::Degrees(a_rad);
-		}
 
 		std::string KindOf(const Slot& a_slot)
 		{
@@ -1642,14 +1729,14 @@ namespace charselect::lobby
 			camera.label = "Camera";
 			camera.camera = true;
 			camera.detail = std::format("x {:.0f}  y {:.0f}  z {:.0f}{}turn {}\xC2\xB0{}tilt {}\xC2\xB0", g_stage.camera.x, g_stage.camera.y,
-				g_stage.camera.z, "   ", Degrees(g_stage.cameraYaw), "   ", static_cast<int>(std::lround(g_stage.cameraPitch * 180.0f / RE::NI_PI)));
+				g_stage.camera.z, "   ", geometry::Degrees(g_stage.cameraYaw), "   ", static_cast<int>(std::lround(g_stage.cameraPitch * 180.0f / RE::NI_PI)));
 			targets.push_back(std::move(camera));
 			for (std::size_t i = 0; i < g_slots.size(); ++i) {
 				const auto& slot = g_slots[i];
 				EditTarget  t;
 				t.label = std::format("{}  {}", i + 1, slot.view.name);
 				t.kind = KindOf(slot);
-				t.detail = std::format("x {:.0f}  y {:.0f}  z {:.0f}   facing {}\xC2\xB0", slot.pos.x, slot.pos.y, slot.pos.z, Degrees(slot.heading));
+				t.detail = std::format("x {:.0f}  y {:.0f}  z {:.0f}   facing {}\xC2\xB0", slot.pos.x, slot.pos.y, slot.pos.z, geometry::Degrees(slot.heading));
 				const bool sits = slot.rest.sit || (slot.select && slot.select->sit);
 				if (slot.furniture && !slot.placedFurniture && sits) {
 					t.movable = false;
@@ -1789,7 +1876,7 @@ namespace charselect::lobby
 
 	void Summon()
 	{
-		if (g_state != State::kActive) {
+		if (g_state != State::kActive || !g_revealed) {
 			return;
 		}
 		auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1806,6 +1893,11 @@ namespace charselect::lobby
 		ReportSlots("after re-layout");
 	}
 
+	bool IsRevealed()
+	{
+		return g_revealed;
+	}
+
 	bool IsEditorOpen()
 	{
 		return g_editorOpen;
@@ -1819,7 +1911,7 @@ namespace charselect::lobby
 
 	void OpenEditor()
 	{
-		if (g_state != State::kActive || g_editorOpen) {
+		if (g_state != State::kActive || !g_revealed || g_editorOpen) {
 			return;
 		}
 		logger::info("Lobby: editor panel open");
@@ -1859,7 +1951,7 @@ namespace charselect::lobby
 		const RE::NiPoint3 delta = forward * a_forward + right * a_right + RE::NiPoint3{ 0.0f, 0.0f, a_up };
 		if (a_target == 0) {
 			g_stage.camera += delta;
-			g_stage.cameraYaw = WrapAngle(g_stage.cameraYaw + a_turn);
+			g_stage.cameraYaw = geometry::WrapAngle(g_stage.cameraYaw + a_turn);
 			g_stage.cameraPitch = std::clamp(g_stage.cameraPitch + a_tilt, -1.2f, 1.2f);
 			g_cameraEdited = true;
 			PlacePlayer();
@@ -1874,7 +1966,7 @@ namespace charselect::lobby
 				return;  // waits at the cell's own seat; the seat picker chooses another
 			}
 			slot.pos += delta;
-			slot.heading = WrapAngle(slot.heading + a_turn);
+			slot.heading = geometry::WrapAngle(slot.heading + a_turn);
 			slot.edited = true;
 			MoveSlotNow(index);
 		}
@@ -1979,14 +2071,54 @@ namespace charselect::lobby
 
 	void ClearPresets(std::function<void()> a_then)
 	{
-		const bool queued = papyrus::CallStatic("CharGen", "ClearPresets", [a_then](const RE::BSScript::Variable&) {
-			logger::debug("Lobby: CharGen.ClearPresets done");
-			if (a_then) {
-				QueueTask(a_then);
+		// a_then runs once, as a task: when RaceMenu answers, or after
+		// kClearPresetsTimeout if a Papyrus VM busy with other mods' scripts
+		// hasn't, rather than leave the screen black.
+		auto then = std::make_shared<std::function<void()>>(std::move(a_then));
+		const auto run = [then](bool a_answered) {
+			if (auto fn = std::exchange(*then, {})) {
+				if (!a_answered) {
+					logger::warn("Lobby: CharGen.ClearPresets hasn't finished after {} s; going on", kClearPresetsTimeout.count());
+				}
+				fn();
 			}
+		};
+		const bool queued = papyrus::CallStatic("CharGen", "ClearPresets", [run](const RE::BSScript::Variable&) {
+			logger::debug("Lobby: CharGen.ClearPresets done");
+			QueueTask([run]() { run(true); });
 		});
-		if (!queued && a_then) {
-			a_then();
+		if (!queued) {
+			run(true);
+			return;
+		}
+		RunAfter(kClearPresetsTimeout, [run]() { run(false); });
+	}
+
+	void BeginLeaving(std::string_view a_why)
+	{
+		if (g_state == State::kLeaving) {
+			return;
+		}
+		logger::info("Lobby: leaving ({})", a_why);
+		poses::Reset(false);  // nobody sits back down (and links again) while the world goes
+		UnlinkSeats();
+		g_editorOpen = false;
+		++g_enterGeneration;  // every delayed callback goes stale
+		SetState(State::kLeaving);
+	}
+
+	void OnLoadListOpened()
+	{
+		g_loadListCapture = resetguard::Capture("load list");
+		g_loadSinceLoadList = false;
+	}
+
+	void OnLoadingMenuOpened()
+	{
+		if (g_state == State::kEntering) {
+			g_loadingScreenSeen = true;
+		} else if (g_state == State::kActive) {
+			g_loadingWhileActive = true;
 		}
 	}
 
@@ -2009,16 +2141,17 @@ namespace charselect::lobby
 		// Whatever triggered the load, the real game gets saving, controls and
 		// the HUD back as the load starts.
 		g_loadStarted = true;
+		g_loadSinceLoadList = true;
 		Teardown();
 		// The load frees the lobby's world, in an order we don't control.
 		UnlinkSeats();
 		switch (rules::OnPreLoadGame(g_state)) {
 		case rules::PreLoad::kStopLobby:
 			// LOAD on the select screen (the Journal). Into the loading state at
-			// once, as PLAY does: the NPC-clearing timer stops (a load longer
-			// than its 2 s could otherwise disable NPCs of a save in the lobby's
-			// own cell) and so do the poses. A cancelled load comes back through
-			// ResumeLobby, like PLAY's.
+			// once, as PLAY does: the NPC-clearing timer stops (it could
+			// otherwise disable NPCs of a save in the lobby's own cell) and so
+			// do the poses. A cancelled load comes back through ResumeLobby,
+			// like PLAY's.
 			logger::info("Lobby: a save is loading from the Journal; the lobby stops");
 			SetState(State::kLoadingSave);
 			poses::Reset(false);  // a cancelled load resumes this lobby
@@ -2048,7 +2181,7 @@ namespace charselect::lobby
 		}
 		actor->Disable();
 		const char* name = actor->GetDisplayFullName();
-		logger::info("Lobby: hid {:08X} '{}' as its 3D loaded", actor->GetFormID(), name ? name : "");
+		logger::debug("Lobby: hid {:08X} '{}' as its 3D loaded", actor->GetFormID(), name ? name : "");
 	}
 
 	void OnNewGame()
@@ -2061,6 +2194,10 @@ namespace charselect::lobby
 
 	void OnJournalClosed()
 	{
+		if (g_state == State::kActive && GameResetting()) {
+			BeginLeaving("Quit to the main menu from the Journal");
+			return;
+		}
 		// Back from the Journal (LOAD) to the select screen, if a cancelled load
 		// from it had hidden ours.
 		if (rules::ShouldShowSelectOnJournalClose(g_state, g_revealed, g_editorOpen, SelectMenu::IsOpen()) && g_onReady) {
@@ -2068,14 +2205,23 @@ namespace charselect::lobby
 			g_onReady();
 		}
 		// Unlinked when the LOAD list opened. A load chosen there may still be
-		// starting as the Journal closes, so look again in a moment.
+		// starting as the Journal closes, or a quit to the main menu, so look
+		// again in a moment.
 		if (g_state == State::kActive) {
 			const auto generation = g_enterGeneration;
 			RunAfter(std::chrono::milliseconds(750), [generation]() {
 				auto* ui = RE::UI::GetSingleton();
-				if (generation == g_enterGeneration && g_state == State::kActive && !(ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME))) {
-					RelinkSeats();
-					logger::info("Lobby: Journal closed without a load; characters linked to their furniture again");
+				if (generation != g_enterGeneration || g_state != State::kActive || (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME))) {
+					return;
+				}
+				if (GameResetting()) {
+					BeginLeaving("Quit to the main menu from the Journal");
+					return;
+				}
+				RelinkSeats();
+				logger::info("Lobby: Journal closed without a load; characters linked to their furniture again");
+				if (std::exchange(g_loadListCapture, false) && !g_loadSinceLoadList) {
+					resetguard::Discard("the load list closed");
 				}
 			});
 		}

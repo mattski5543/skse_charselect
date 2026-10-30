@@ -3,7 +3,6 @@
 
 #include "Poses.h"
 
-#include "Lobby.h"
 #include "Util.h"
 
 namespace charselect::poses
@@ -13,9 +12,9 @@ namespace charselect::poses
 		// Skyrim.esm forms
 		constexpr RE::FormID kSitLinkedRefPackage = 0x0ECEEB;  // defaultSitLinkedRefNoConv: sit in the linked ref
 		// ambushSleepPackage: sleep in the linked ref itself, any time; its one
-		// condition is Variable01 == 0 (ambushers wake when it's set). 0.3.6 used
+		// condition is Variable01 == 0 (ambushers wake when it's set). Not
 		// pelagiusHoldPosSleepIgnoreCombat, which first searches for a bed near
-		// the linked ref: too slow for the instant pop, so the sleeper walked.
+		// the linked ref: too slow for the instant pop, so the sleeper walks.
 		constexpr RE::FormID kSleepLinkedRefPackage = 0x09448B;
 		constexpr RE::FormID kEnterChairInstant = 0x031728;    // idle, event IdleChairEnterInstant
 
@@ -43,6 +42,7 @@ namespace charselect::poses
 			bool                started{ false };
 			bool                busy{ false };  // sitting down or standing up
 			std::uint32_t       token{ 0 };     // bumped by every Apply; stale steps stop
+			bool                warnedNoSeat{ false };  // a seated pose without a seat, logged once
 		};
 
 		std::vector<Performer>     g_performers;
@@ -319,7 +319,7 @@ namespace charselect::poses
 			// What lets NPCs appear already seated when a cell loads, instead of walking over.
 			a_actor->GetActorRuntimeData().boolFlags.set(RE::Actor::BOOL_FLAGS::kAllowInstantFurniturePopInPlayerCell);
 			// With an AI reset: after the engine has taken an actor out of its
-			// seat, package evaluation alone did nothing for ~3 s (0.4.0).
+			// seat, package evaluation alone does nothing for seconds.
 			a_actor->EvaluatePackage(true, true);
 			logger::debug("Poses: slot {} sitting down ({})", a_index + 1, Describe(a_actor));
 			const auto epoch = g_epoch;
@@ -359,8 +359,8 @@ namespace charselect::poses
 			auto& p = g_performers[a_index];
 			p.busy = true;
 			// Off the sit package first, or it sits straight back down. Package
-			// changes alone don't get a seated actor up (0.3.1); the chair
-			// exit animation should.
+			// changes alone don't get a seated actor up; the chair exit
+			// animation does.
 			SetTopPackage(a_actor->GetActorBase(), DoNothingPackage());
 			const bool exitOk = a_actor->NotifyAnimationGraph("IdleChairExitStart");
 			logger::debug("Poses: slot {} standing up, exit event {} ({})", a_index + 1, exitOk ? "accepted" : "rejected", Describe(a_actor));
@@ -381,7 +381,7 @@ namespace charselect::poses
 			const bool inFurniture = SitState(actor) != RE::SIT_SLEEP_STATE::kNormal;
 			const bool wantSit = a_pose.sit && p->furniture.get() && FurniturePackage(a_pose);
 			logger::debug("Poses: slot {} '{}' -> '{}' ({})", a_index + 1, previous.name, a_pose.name, a_why);
-			if (a_pose.sit && !wantSit) {
+			if (a_pose.sit && !wantSit && !std::exchange(p->warnedNoSeat, true)) {
 				logger::warn("Poses: slot {} pose '{}' needs furniture (slot{}furniture); standing instead", a_index + 1, a_pose.name, a_index + 1);
 			}
 
@@ -426,9 +426,9 @@ namespace charselect::poses
 			}
 			for (std::size_t i = 0; i < g_performers.size(); ++i) {
 				auto& p = g_performers[i];
-				// Something took a seated character out of its seat (0.3.8-0.4.0:
-				// slot 3, female, ~3.5 s after spawn; possibly OBody refreshing
-				// her body): sit back down.
+				// Something took a seated character out of its seat (seen a few
+				// seconds after spawning; possibly a body mod refreshing them):
+				// sit back down.
 				if (auto* sitter = p.started && !p.busy && p.current.sit && p.furniture ? ActorOf(p) : nullptr;
 					sitter && SitState(sitter) == RE::SIT_SLEEP_STATE::kNormal) {
 					logger::warn("Poses: slot {} was taken out of its furniture ({}); sitting it back down", i + 1, Describe(sitter));
@@ -496,7 +496,7 @@ namespace charselect::poses
 			a_actor->extraList.SetLinkedRef(a_furniture, nullptr);
 			// Before it is enabled: lets the engine put it straight into its
 			// furniture while its 3D loads, the way NPCs are already seated
-			// when a cell loads (0.3.1 got this; 0.3.3 walked and never sat).
+			// when a cell loads (without it, it walks over and may never sit).
 			a_actor->GetActorRuntimeData().boolFlags.set(RE::Actor::BOOL_FLAGS::kAllowInstantFurniturePopInPlayerCell);
 		}
 	}

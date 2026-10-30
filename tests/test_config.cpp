@@ -42,7 +42,6 @@ TEST_CASE("An empty INI keeps the defaults", "[config]")
 	CHECK(s.fallbackCell == "qasmoke");
 	CHECK(s.maxCharacters == 5);
 	CHECK(s.standInOutfit.size() == 3);
-	CHECK(log.infos.empty());
 	CHECK(log.warnings.empty());
 }
 
@@ -54,7 +53,6 @@ TEST_CASE("The shipped CharSelect.ini parses cleanly and matches the built-in de
 	ParseLog log;
 	Parse(in, s, log);
 	CHECK(log.warnings.empty());
-	CHECK(log.infos.empty());
 
 	// Deleting a line from the INI must not change behaviour, so the file and
 	// the code agree on every default.

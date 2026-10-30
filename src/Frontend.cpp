@@ -4,9 +4,8 @@
 
 #include "Config.h"
 #include "Lobby.h"
-#include "Poses.h"
-#include "SelectMenu.h"
 #include "ResetGuard.h"
+#include "SelectMenu.h"
 #include "Util.h"
 #include "core/Text.h"
 
@@ -15,11 +14,11 @@ namespace charselect::frontend
 	namespace
 	{
 		Action g_pending{ Action::kNone };
-		bool   g_loggedCallbacks{ false };
 		bool   g_atMainMenu{ false };
 		bool   g_classicThisVisit{ false };  // stay on the vanilla menu until it closes
 		bool   g_viaHotkey{ false };         // this visit's lobby was asked for with the hotkey
 		bool   g_covered{ false };           // CoverMainMenu hid it for the lobby this visit
+		std::string g_failureMessage;        // a lobby that failed in its own game: shown at the main menu
 
 		std::optional<std::chrono::steady_clock::time_point> g_mainMenuOpenedAt;  // until the lobby shows
 
@@ -61,28 +60,8 @@ namespace charselect::frontend
 			}
 		}
 
-		// Logs every GameDelegate callback the main menu registered, so we can
-		// see the real names on this game version.
-		void LogMainMenuCallbacks()
-		{
-			auto menu = MainMenu();
-			if (!menu || !menu->fxDelegate) {
-				logger::warn("Frontend: main menu has no FxDelegate");
-				return;
-			}
-			std::vector<std::string> names;
-			for (const auto& entry : menu->fxDelegate->callbacks) {
-				names.emplace_back(entry.first.c_str());
-			}
-			std::ranges::sort(names);
-			logger::debug("Frontend: main menu GameDelegate callbacks ({}):", names.size());
-			for (const auto& n : names) {
-				logger::debug("Frontend:   {}", n);
-			}
-		}
-
 		// Calls the main menu callback whose name contains any of a_keywords
-		// (case-insensitive), as if its button had been pressed.
+		// (case-insensitive), as if its button had been pressed. UI thread.
 		bool InvokeMainMenuCallback(std::initializer_list<std::string_view> a_keywords)
 		{
 			auto menu = MainMenu();
@@ -110,21 +89,16 @@ namespace charselect::frontend
 		void PerformPending(Action a_action)
 		{
 			logger::info("Frontend: performing pending action {}", ActionName(a_action));
-			bool done = false;
-			switch (a_action) {
-			case Action::kNewGame:
-				done = InvokeMainMenuCallback({ "startnewgame" });
-				break;
-			case Action::kClassicMenu:
-			case Action::kNone:
-				done = true;
-				break;
+			if (a_action != Action::kNewGame) {
+				return;
 			}
-			if (!done) {
-				// Only New Game gets here.
-				logger::error("Frontend: no main menu callback for {}", ActionName(a_action));
-				RE::DebugMessageBox("CharSelect: Could not start a new game. Use the main menu instead.");
-			}
+			// The menu's own button handler, so on the thread its button runs on.
+			QueueUITask([]() {
+				if (!InvokeMainMenuCallback({ "startnewgame" })) {
+					logger::error("Frontend: no main menu callback to start a new game");
+					RE::DebugMessageBox("CharSelect: Could not start a new game. Use the main menu instead.");
+				}
+			});
 		}
 
 		void OnLobbyFailure(std::string_view a_reason, bool a_nothingToShow);
@@ -151,8 +125,10 @@ namespace charselect::frontend
 				}
 				RE::DebugMessageBox(std::format("CharSelect: {}", a_reason).c_str());
 			} else {
-				// Failed after leaving the main menu: go back to it.
-				logger::warn("Frontend: lobby failed in game ({}), returning to the main menu", a_reason);
+				// Failed in the lobby's own game: back to the main menu, and
+				// say why once it's there.
+				logger::warn("Frontend: the lobby failed in its game; returning to the main menu");
+				g_failureMessage = std::format("CharSelect: {}", a_reason);
 				ReturnToMainMenu(Action::kClassicMenu);
 			}
 		}
@@ -170,10 +146,18 @@ namespace charselect::frontend
 		constexpr auto kSplashPoll = std::chrono::milliseconds(50);
 		constexpr int  kSplashPollMax = 20;  // 1 s
 
+		// Still at the main menu: a mod that loads a save at startup may have
+		// started one meanwhile, and the lobby must never start in it.
+		bool StillAtMainMenu()
+		{
+			auto* ui = RE::UI::GetSingleton();
+			return g_atMainMenu && ui && ui->IsMenuOpen(RE::MainMenu::MENU_NAME) && !ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+		}
+
 		// The coc stalls the game, so wait for the splash to be up first.
 		void EnterWhenSplashUp(int a_attempt)
 		{
-			if (lobby::GetState() != lobby::State::kIdle || SelectMenu::MovieFailed()) {
+			if (lobby::GetState() != lobby::State::kIdle || SelectMenu::MovieFailed() || !StillAtMainMenu()) {
 				return;
 			}
 			if (!SelectMenu::IsOpen() && a_attempt < kSplashPollMax) {
@@ -181,7 +165,13 @@ namespace charselect::frontend
 				return;
 			}
 			// One more beat so it has drawn a frame.
-			RunAfter(kSplashPoll, []() { lobby::RequestEnter(); });
+			RunAfter(kSplashPoll, []() {
+				if (StillAtMainMenu()) {
+					lobby::RequestEnter();
+				} else {
+					logger::info("Frontend: no longer at the main menu; not starting the lobby");
+				}
+			});
 		}
 
 		void StartLobby()
@@ -214,7 +204,7 @@ namespace charselect::frontend
 		lobby::SetReadyHandler(OnLobbyReady);
 		g_raceMenu = REX::W32::GetModuleHandleW(L"skee64.dll") != nullptr;
 		if (!g_raceMenu) {
-			logger::error("Frontend: RaceMenu (skee64.dll) isn't loaded; the lobby is off");
+			logger::warn("Frontend: RaceMenu (skee64.dll) isn't loaded; the lobby is off");
 		}
 	}
 
@@ -248,15 +238,14 @@ namespace charselect::frontend
 			if (!g_atMainMenu) {
 				return;
 			}
-			if (!g_loggedCallbacks) {
-				g_loggedCallbacks = true;
-				LogMainMenuCallbacks();
-			}
 			if (g_pending != Action::kNone) {
 				const auto action = std::exchange(g_pending, Action::kNone);
 				g_classicThisVisit = true;
 				SelectMenu::Hide();  // still black from the fade, if it survived the reset
 				SetVanillaVisible(true);
+				if (const auto message = std::exchange(g_failureMessage, {}); !message.empty()) {
+					RE::DebugMessageBox(message.c_str());
+				}
 				PerformPending(action);
 				return;
 			}
@@ -271,7 +260,7 @@ namespace charselect::frontend
 				return;
 			}
 			if (lobby::LoadFailedRecently()) {
-				// Re-entering would PLAY into the same failure again: a loop (0.5.21).
+				// Re-entering would PLAY into the same failure again: a loop.
 				logger::warn("Frontend: back at the main menu after a failed load from the lobby; showing the vanilla menu");
 				lobby::ClearLoadFailure();
 				g_classicThisVisit = true;
@@ -316,14 +305,14 @@ namespace charselect::frontend
 	{
 		logger::info("Frontend: returning to the main menu, then {}", ActionName(a_action));
 		g_pending = a_action;
-		poses::Reset(false);    // nobody sits back down (and links again) during the reset
-		lobby::UnlinkSeats();
+		lobby::BeginLeaving(std::format("back to the main menu, then {}", ActionName(a_action)));
 		// The select menu stays up (black after its fade) through the reset;
 		// OnMainMenuOpened hides it once the vanilla menu is there. Saving
 		// stays off until then (lobby::OnMainMenuOpened).
 		lobby::ClearPresets([]() {
 			if (g_atMainMenu) {
 				logger::info("Frontend: already at the main menu; no reset needed");
+				lobby::OnMainMenuOpened();
 				return;
 			}
 			auto* main = RE::Main::GetSingleton();
@@ -332,10 +321,12 @@ namespace charselect::frontend
 				return;
 			}
 			resetguard::Capture("main menu");
+			// What the game's own Quit to Main Menu sets: the main loop ends
+			// the running game and opens the main menu.
 			main->GetRuntimeData().resetGame = true;
 			RunAfter(std::chrono::seconds(8), []() {
 				if (!g_atMainMenu) {
-					logger::error("Frontend: still not at the main menu 8s after resetGame");
+					logger::warn("Frontend: still not at the main menu 8 s after asking for it");
 				}
 			});
 		});
@@ -504,6 +495,7 @@ namespace charselect::frontend
 	{
 		logger::info("Frontend: opening the vanilla load list (Journal)");
 		// Loading or quitting from there leaves the lobby without our own load path.
+		lobby::OnLoadListOpened();
 		lobby::ClearPresets();
 		lobby::UnlinkSeats();  // linked again if the Journal closes without a load
 		if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
@@ -515,6 +507,7 @@ namespace charselect::frontend
 	void Quit()
 	{
 		logger::info("Frontend: quit to desktop");
+		lobby::BeginLeaving("quit");
 		lobby::Teardown();
 		if (auto* main = RE::Main::GetSingleton()) {
 			main->GetRuntimeData().quitGame = true;

@@ -19,6 +19,10 @@ namespace charselect::input
 			case kD:
 			case kPgDn:
 				return Nav::kRight;
+			case kUp:
+				return Nav::kUp;
+			case kDown:
+				return Nav::kDown;
 			case kEnter:
 			case kE:
 				return Nav::kConfirm;
@@ -33,6 +37,12 @@ namespace charselect::input
 				return Nav::kLeft;
 			case kPadRight:
 				return Nav::kRight;
+			case kPadUp:
+				return Nav::kUp;
+			case kPadDown:
+				return Nav::kDown;
+			case kPadB:
+				return Nav::kBack;
 			case kPadA:
 				return Nav::kConfirm;
 			case kPadX:
@@ -124,18 +134,19 @@ namespace charselect::input
 		using Kind = Action::Kind;
 		const bool keyboard = a_device == Device::kKeyboard;
 
+		// Only our own menu, on top, takes the lobby's keys (typing in the
+		// console mapped letters and Enter to PLAY), and only once it shows
+		// the select screen and isn't fading out: the editor opened behind
+		// the splash, or over a fade, broke the screen that followed.
+		const bool selectScreen = a_ctx.state == lobby::State::kActive && a_ctx.selectMenuOpen && !a_ctx.otherMenuOnTop && a_ctx.revealed &&
+		                          !a_ctx.menuFading;
 		if (keyboard && a_key == a_ctx.lobbyHotkey) {
 			if (a_ctx.state == lobby::State::kIdle && a_ctx.atMainMenu && !a_ctx.otherMenuOnTop) {
 				return { Kind::kEnterLobby };
 			}
-			if (a_ctx.state == lobby::State::kActive && a_ctx.selectMenuOpen && !a_ctx.otherMenuOnTop) {
-				return { Kind::kSummon };
-			}
-			return {};
+			return selectScreen ? Action{ Kind::kSummon } : Action{};
 		}
-		// Only our own menu, on top, takes the lobby's keys: typing in the
-		// console mapped letters and Enter to PLAY.
-		if (a_ctx.state != lobby::State::kActive || !a_ctx.selectMenuOpen || a_ctx.otherMenuOnTop) {
+		if (!selectScreen) {
 			return {};
 		}
 		if (keyboard && a_key == kF8) {
@@ -165,6 +176,6 @@ namespace charselect::input
 
 	bool RepeatReachesEditor(const Context& a_ctx)
 	{
-		return a_ctx.state == lobby::State::kActive && a_ctx.selectMenuOpen && a_ctx.editorOpen && !a_ctx.otherMenuOnTop;
+		return a_ctx.state == lobby::State::kActive && a_ctx.selectMenuOpen && a_ctx.revealed && a_ctx.editorOpen && !a_ctx.otherMenuOnTop;
 	}
 }

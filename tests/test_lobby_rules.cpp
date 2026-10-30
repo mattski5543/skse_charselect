@@ -15,6 +15,7 @@ TEST_CASE("StateName names every state", "[lobby]")
 	CHECK(StateName(State::kEntering) == "Entering");
 	CHECK(StateName(State::kActive) == "Active");
 	CHECK(StateName(State::kLoadingSave) == "LoadingSave");
+	CHECK(StateName(State::kLeaving) == "Leaving");
 	CHECK(StateName(static_cast<State>(99)) == "?");
 }
 
@@ -70,7 +71,7 @@ TEST_CASE("A load starts only from an open lobby (no double PLAY)", "[lobby]")
 
 TEST_CASE("PreLoadGame", "[lobby]")
 {
-	SECTION("a LOAD from the Journal stops the lobby at once (C10, C11)")
+	SECTION("a LOAD from the Journal stops the lobby at once")
 	{
 		CHECK(OnPreLoadGame(State::kActive) == PreLoad::kStopLobby);
 	}
@@ -97,7 +98,7 @@ TEST_CASE("PostLoadGame", "[lobby]")
 		CHECK(OnPostLoadGame(State::kEntering, true) == PostLoad::kWarnEntering);
 		CHECK(OnPostLoadGame(State::kEntering, false) == PostLoad::kWarnEntering);
 	}
-	SECTION("a cancelled or failed load from the lobby goes back to the lobby (C2, C10)")
+	SECTION("a cancelled or failed load from the lobby goes back to the lobby")
 	{
 		CHECK(OnPostLoadGame(State::kLoadingSave, false) == PostLoad::kResume);
 	}
@@ -149,6 +150,18 @@ TEST_CASE("The main menu resets any lobby", "[lobby]")
 	CHECK(ShouldResetOnMainMenu(State::kEntering));
 	CHECK(ShouldResetOnMainMenu(State::kActive));
 	CHECK(ShouldResetOnMainMenu(State::kLoadingSave));
+	CHECK(ShouldResetOnMainMenu(State::kLeaving));
+}
+
+TEST_CASE("A lobby being left takes nothing more until the main menu", "[lobby]")
+{
+	// MAIN MENU, NEW GAME or QUIT: its game is being torn down.
+	CHECK_FALSE(CanEnter(State::kLeaving));
+	CHECK_FALSE(CanPlay(State::kLeaving, 0, 3, true));
+	CHECK_FALSE(CanStartLoad(State::kLeaving));
+	CHECK_FALSE(ShouldDismissMessageBoxes(State::kLeaving, true));
+	CHECK_FALSE(ShouldShowSelectOnJournalClose(State::kLeaving, true, false, false));
+	CHECK(OnPreLoadGame(State::kLeaving) == PreLoad::kNone);
 }
 
 TEST_CASE("The select screen comes back when the Journal closes only in a shown, idle lobby", "[lobby]")
@@ -179,7 +192,7 @@ TEST_CASE("The load watchdog", "[lobby]")
 	{
 		CHECK(CheckLoadStart(true, State::kLoadingSave, false, true) == LoadWatch::kRecheck);
 	}
-	SECTION("brings the select screen back when nothing happened (C9)")
+	SECTION("brings the select screen back when nothing happened")
 	{
 		CHECK(CheckLoadStart(true, State::kLoadingSave, false, false) == LoadWatch::kResume);
 	}

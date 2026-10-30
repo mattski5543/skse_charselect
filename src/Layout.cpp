@@ -134,7 +134,8 @@ namespace charselect::layout
 
 	std::string FormatRef(const RE::TESObjectREFR* a_ref)
 	{
-		// Not GetFile(0): USSEP edits many Skyrim.esm references (0.5.3).
+		// Not GetFile(0): that's the last plugin to edit the reference (USSEP edits
+		// many of Skyrim.esm's), where the lookup would miss it.
 		const auto owner = OwningPlugin(a_ref);
 		return owner ? FormatFormKey({ owner->localId, text::ToUtf8(owner->file->GetFilename()) }) : std::string{};
 	}

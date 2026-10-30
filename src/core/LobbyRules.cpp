@@ -16,6 +16,8 @@ namespace charselect::lobby
 			return "Active"sv;
 		case State::kLoadingSave:
 			return "LoadingSave"sv;
+		case State::kLeaving:
+			return "Leaving"sv;
 		}
 		return "?"sv;
 	}
@@ -65,8 +67,8 @@ namespace charselect::lobby::rules
 		}
 		// The missing-content prompt aborts the first attempt (if the player
 		// continues, the game retries and a successful PostLoadGame follows),
-		// or the load failed: either way still in the lobby. (0.5.22 stranded
-		// the player after a cancelled LOAD: it was treated as having left.)
+		// or the load failed: either way still in the lobby. (Treating it as
+		// having left would strand the player after a cancelled LOAD.)
 		if (!a_success && a_state == State::kLoadingSave) {
 			return PostLoad::kResume;
 		}

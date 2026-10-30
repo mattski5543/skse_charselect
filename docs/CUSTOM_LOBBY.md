@@ -20,7 +20,7 @@ In `Data\SKSE\Plugins\CharSelect.ini`, set:
 sLobbyCell = SkyHavenTemple
 ```
 
-Start the game. If the location can't be loaded, CharSelect uses `sFallbackCell` (the developer test cell, `qasmoke`) instead, and the log says why.
+Start the game. If the location can't be loaded, CharSelect uses `sFallbackCell` (the developer test cell, `qasmoke`) instead, shows a message saying so, and the log says why.
 
 ## 3. Arrange it with the layout editor
 

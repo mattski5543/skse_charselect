@@ -17,6 +17,7 @@ namespace charselect::lobby
 		kEntering,     // coc issued, waiting for the player to settle in the cell
 		kActive,       // in the lobby, actors spawned
 		kLoadingSave,  // a save load was requested from the lobby
+		kLeaving,      // its game is ending (back to the main menu, or quitting): nothing acts on it
 	};
 
 	[[nodiscard]] std::string_view StateName(State a_state);
@@ -78,7 +79,7 @@ namespace charselect::lobby::rules
 
 	// Remembers when the last load from the lobby started. A main menu soon
 	// after means the game gave up on it, and re-entering the lobby from
-	// there would loop (0.5.21).
+	// there would loop.
 	class LoadFailureTracker
 	{
 	public:
@@ -98,7 +99,7 @@ namespace charselect::lobby::rules
 		bool  replaceMainMenu{ true };   // CharSelect.ini bReplaceMainMenu
 		bool  raceMenuLoaded{ true };    // skee64.dll is loaded
 		bool  classicThisVisit{ false };  // the player picked MAIN MENU on the select screen
-		bool  actionPending{ false };     // NEW GAME / LOAD etc. on its way through the main menu
+		bool  actionPending{ false };     // NEW GAME or MAIN MENU on its way through the main menu
 		State state{ State::kIdle };
 		bool  loadFailedRecently{ false };
 		bool  menuAvailable{ true };  // the select menu's SWF loaded
