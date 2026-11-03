@@ -72,6 +72,7 @@ TEST_CASE("The installer offers every location, each with a layout", "[fomod][sh
 	for (const auto& [folder, cell] : locations) {
 		INFO(folder << " = " << cell);
 		CHECK(Count(config, "source=\"Locations\\" + folder + "\"") == 1);
+		CHECK(Count(config, "<image path=\"fomod\\images\\" + folder + ".jpg\" />") == 1);
 		CHECK(Count(layouts, "\n[" + Lower(cell) + "]") == 1);
 	}
 	// One choice preselected: the first, which is also the shipped default.

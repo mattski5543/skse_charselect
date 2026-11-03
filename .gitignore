@@ -9,3 +9,5 @@ __pycache__/
 CLAUDE.local.md
 # The maintainer's release plan
 RELEASE_PLAN.md
+# Installer screenshots: packaged from a local copy, not tracked
+fomod/images/

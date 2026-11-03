@@ -1,6 +1,6 @@
 # Writes the installer's files into a staged package (run with cmake -P after
 # the plugin and dist-files are staged under STAGE_DIR/Core):
-#   STAGE_DIR/fomod/info.xml, ModuleConfig.xml
+#   STAGE_DIR/fomod/info.xml, ModuleConfig.xml, and images/ if fomod/images exists
 #   STAGE_DIR/Locations/<folder>/SKSE/Plugins/CharSelect.ini, one per line of
 #   fomod/locations.txt, each the shipped CharSelect.ini with its sLobbyCell.
 # Arguments: -DSOURCE_DIR=... -DSTAGE_DIR=... -DPROJECT_VERSION=... -DPROJECT_AUTHOR=...
@@ -14,6 +14,10 @@ endforeach()
 file(MAKE_DIRECTORY "${STAGE_DIR}/fomod")
 configure_file("${SOURCE_DIR}/fomod/info.xml.in" "${STAGE_DIR}/fomod/info.xml" @ONLY)
 file(COPY "${SOURCE_DIR}/fomod/ModuleConfig.xml" DESTINATION "${STAGE_DIR}/fomod")
+# A screenshot per location, if there are any: the installer shows none without.
+if(EXISTS "${SOURCE_DIR}/fomod/images")
+	file(COPY "${SOURCE_DIR}/fomod/images" DESTINATION "${STAGE_DIR}/fomod")
+endif()
 
 file(READ "${SOURCE_DIR}/dist-files/SKSE/Plugins/CharSelect.ini" ini)
 string(REGEX MATCHALL "\nsLobbyCell = [^\r\n]*" found "${ini}")
