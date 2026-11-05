@@ -1,40 +1,38 @@
-# CharSelect
+# Character Select
 
 ![Five characters gathered around the fire in the Bannered Mare](docs/images/cover.png)
 
-A character select screen for Skyrim. Instead of the main menu you get all your characters standing together, in their own looks and gear. Pick one, press **Enter**, and you're in their latest save.
+An SKSE plugin that swaps Skyrim's main menu for a lobby with the characters from your saves. Pick one, press **Enter**, and it loads their latest save.
 
 ## Features
 
-- Your characters look like they do in your saves: face, body, hair, war paint and gear.
-- They stand, sit or pose, and you pick how.
-- Five locations to choose from when you install, or [your own](docs/CUSTOM_LOBBY.md).
-- **Enter** loads a character's latest save.
-- **Load**, **New Game** and **Main Menu** still use the game's own menus.
-- A layout editor (F8) for moving the camera and characters around and picking poses and seats.
-- Keyboard, mouse and controller.
-- No `.esp`.
+- Your latest saves become characters in the lobby, including their equipment, overlays etc.
+- In-game editor (F8) to set the position and pose of each character, and the camera.
+- 5 pre-configured scenes to choose from. Any named cell can become a lobby once it's set up ([how](docs/CUSTOM_LOBBY.md)).
+- Characters can use furniture and play animations. They're locked in place once set up.
+- Keyboard, mouse and controller support.
+- No `.esp`, and it never touches your save files. See [save safety](docs/SAVE_SAFETY.md).
 
 ## How it works
 
-While you play, CharSelect records each character's look whenever you load or save: a RaceMenu preset, their face tint and what they're wearing.
-
-At the main menu it does a `coc` into the location you picked, same as typing it in the console. That starts a fresh, throwaway game in the background. Each recorded character is spawned there as a temporary NPC with their own look and gear, the people who normally live there are hidden, you become the camera, and saving is switched off.
-
-Press **Enter** and it loads that character's latest save, just like loading from any other game. Leaving the throwaway game makes Skyrim reset some game data, so CharSelect puts that back once your save has loaded (see [Compatibility](#compatibility)).
+- Character Select records each character's look whenever you load or save, including their RaceMenu preset and gear.
+- As soon as the main menu would normally load, it does a `coc` into the location set in your config. That essentially starts a new game.
+- Each recorded character is spawned there as a temporary NPC, and the NPCs who'd normally be there are hidden. Saving and normal character controls are switched off while you're in the lobby.
+- Pick a character with the arrow keys and press **Enter** to load their latest save.
+- Once a save loads, the mod puts back the game data that leaving the lobby resets (see [Compatibility](#compatibility)).
 
 ## Requirements
 
-- Skyrim SE or AE. Tested on 1.7.104. 1.6.1170 and 1.5.97 should work but haven't been tested. No VR.
+- Skyrim SE or AE. Tested on 1.7.104. 1.6.1170 and 1.5.97 should work but haven't been tested yet. No VR.
 - [SKSE](https://skse.silverlock.org/)
 - [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
-- [RaceMenu](https://www.nexusmods.com/skyrimspecialedition/mods/19080), a version that works on your game version. CharSelect uses it to rebuild your characters' looks.
+- [RaceMenu](https://www.nexusmods.com/skyrimspecialedition/mods/19080), a version that works on your game version. Tested with the beta from RaceMenu's Patreon, but the mod only uses a few of RaceMenu's functions, so other versions should work too.
 
-## Installing
+## Installation
 
-Install with Vortex or Mod Organizer 2 and start the game through SKSE like normal. The installer asks where your characters should gather: the Bannered Mare, the Ragged Flagon, Sky Haven Temple, High Hrothgar or Sovngarde. You can change it later with `sLobbyCell`.
-
-**First time:** load each character once so CharSelect can record their look. Until then they show up as a hooded figure, and you can still play them.
+- It's fine to install or uninstall any time. The mod doesn't touch your save data.
+- Install with Vortex or Mod Organizer 2 and pick a location in the installer: the Bannered Mare, the Ragged Flagon, Sky Haven Temple, High Hrothgar or Sovngarde. You can change it later with `sLobbyCell`.
+- Load each character once so Character Select can record them. Until then they show up as a hooded stand-in (you can still play them).
 
 ## Controls
 
@@ -46,9 +44,9 @@ Install with Vortex or Mod Organizer 2 and start the game through SKSE like norm
 | New Game, Load, Main Menu, Quit | Down arrow, then Up/Down and Enter | D-pad down, then up/down and A (B goes back) |
 | Layout editor | F8 | |
 
-**Main Menu** takes you to the normal main menu. Press F7 there to get the select screen back.
+**Main Menu** takes you to the normal main menu. F7 there brings the lobby back.
 
-**Layout editor:** press F8 on the select screen. Pick the camera or a character from the list (or click one), then move with the arrows or WASD, turn with Q/E, go up and down with R/F, and tilt the camera with T/G. Hold a key to keep going. For a character you can also set a pose for when they're idle, one for when they're selected, and a seat. **Save & close** (Enter or F8) keeps it, **Cancel** (Esc) throws it away, and **Reset to default** brings back the built-in layout. Your layout is saved in `Documents\My Games\Skyrim Special Edition\SKSE\CharSelect\Layout.ini`.
+**Layout editor:** press F8 in the lobby. Pick the camera or a character from the list (or click one), then move with the arrows or WASD, turn with Q/E, raise or lower with R/F, and tilt the camera with T/G. Hold a key to keep going. Characters also get a pose for when they're idle, one for when they're selected, and a seat. **Save & close** (Enter or F8) keeps it, **Cancel** (Esc) throws it away, **Reset to default** goes back to the built-in layout. Your layout is saved in `Documents\My Games\Skyrim Special Edition\SKSE\CharSelect\Layout.ini`.
 
 ## Settings
 
@@ -56,53 +54,56 @@ In `Data\SKSE\Plugins\CharSelect.ini`. Delete a line to go back to its default.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `bReplaceMainMenu` | `1` | `0` keeps the normal main menu. F7 there opens the select screen. |
-| `iLobbyHotkey` | `0x41` (F7) | The key that opens the select screen from the main menu. |
+| `bReplaceMainMenu` | `1` | `0` keeps the normal main menu. F7 there opens the lobby. |
+| `iLobbyHotkey` | `0x41` (F7) | The key that opens the lobby from the main menu. |
 | `bDebugLog` | `0` | `1` writes a detailed `CharSelect.log`, for reporting a problem. |
-| `sLobbyCell` | your installer choice | Where the select screen is (a cell editor ID): `WhiterunBanneredMare`, `RiftenRaggedFlagon`, `SkyHavenTemple`, `HighHrothgarEntrance`, `SovngardeMeadHall`, or [your own](docs/CUSTOM_LOBBY.md). |
+| `sLobbyCell` | your installer choice | The lobby's location (a cell editor ID): `WhiterunBanneredMare`, `RiftenRaggedFlagon`, `SkyHavenTemple`, `HighHrothgarEntrance`, `SovngardeMeadHall`, or [your own](docs/CUSTOM_LOBBY.md). |
 | `sFallbackCell` | `qasmoke` | Used if `sLobbyCell` can't be loaded (a typo, or its mod isn't installed). You get a message when that happens. |
 | `iMaxCharacters` | `5` | How many characters to show, 1 to 9, most recently played first. |
-| `sStandInOutfit` | black hood, robes, boots | What the hooded figure wears for characters that haven't been recorded yet. |
+| `sStandInOutfit` | black hood, robes, boots | What the stand-in wears for characters that haven't been recorded yet. |
 
-Each location has a layout that says where the camera and characters go (`CharSelectLayouts.ini`, plus whatever you change with F8). In a location without one, the camera starts wherever the game drops you and the characters line up in front of it, ready for F8.
+Each location has a layout for where the camera and characters go (`CharSelectLayouts.ini`, plus anything you change with F8). A location without one puts the camera wherever the game drops you, with the characters lined up in front of it, ready for F8.
 
-## Is it safe for my saves?
+## Save safety
 
-As far as I can tell, yes. CharSelect never writes or changes a save file, and saving is turned off while the select screen is up. The only thing it changes in your game is putting back data that leaving the select screen resets (see [Compatibility](#compatibility)). I loaded the same save with and without CharSelect on a load order of about 1,000 plugins, saved, and compared the two. Nothing from the select screen made it into the save. The details, and what that test can't tell you, are in [docs/SAVE_SAFETY.md](docs/SAVE_SAFETY.md).
+Saving is off while the lobby is up, and Character Select never writes or changes a save file. The only thing it changes in your game is putting back data that leaving the lobby resets (see [Compatibility](#compatibility)). I compared the same save loaded with and without the mod on a load order of about 1,000 mods, and nothing from the lobby ended up in it. Full write-up in [docs/SAVE_SAFETY.md](docs/SAVE_SAFETY.md).
 
 ## Compatibility
 
-Your other mods start up in the select screen's background game as usual, and most don't care. The catch is what happens when you leave it: Skyrim resets some records back to how they are in their plugin files. That doesn't happen on a normal load in your own game, but it does any time you leave a game started with `coc` from the main menu, which is how the select screen gets going. Mods that change records once per session can lose those changes.
+The lobby is essentially a new game, so your other mods start up behind it like normal. Leaving it makes Skyrim reset some records back to how they are in their plugins. That's not something the mod does: it happens any time you leave a game started with `coc` from the main menu. It can break mods that set things up once per session.
 
-CharSelect deals with this. Right before the select screen's game ends it takes note of what's there, and once your save has loaded it puts back what got reset:
+Character Select notes what's there just before you leave the lobby, and once your save has loaded it puts back what got reset:
 
 - missing parts of armors and skins, like the hands on a body skin
 - skins missing from characters and races
 - spells, perks, keywords, head parts and hair colour missing from characters, and keywords missing from races, armor and weapons
 - characters that got wiped completely (every spell and perk gone): their spells, perks, keywords, face, head parts and skin tints, plus their factions, AI packages, inventory, outfits, voice and height wherever those came back empty
 
-It only fills in what's missing or empty. It never removes anything or overwrites something your save or another mod has set since, and it doesn't run when you load from inside your own game. With `bDebugLog = 1` it also logs anything else that changed, so new cases can be found.
+It only fills in what's missing or empty, never removes or overwrites anything, and doesn't run when you load from inside your own game. With `bDebugLog = 1` it also logs anything else that changed, so new cases can be found.
+
+Mods it's been checked with:
 
 | Mod | What happened | Status |
 |---|---|---|
-| A skin mod | Men lost their hands after the select screen. The skin mod fills in its own skins the first time it sees each body skin, and the reset emptied them. | Fixed in 0.9.3 |
+| A skin mod | Men lost their hands after the lobby. The skin mod fills in its own skins once per session and the reset emptied them. | Fixed in 0.9.3 |
 | Skins handed out at startup (SPID, other skin distributors, Exquisite NPCs) | Some characters lost their skin for the session. | Fixed in 0.9.3 |
-| Characters who live where the select screen is (Mikael and Uthgerd in the Bannered Mare, Lydia from Housecarls Pre-Thaneship) | They came back wiped: no spells, perks or keywords. Lydia lost her hair colour too, so her hair went pink and OBody crashed the game reading it. | Fixed in 0.9.7 |
-| RaceMenu, with hair from a light (ESL-flagged) plugin, such as KS Hairdos SMP | The hair showed up as a default one on the select screen, because RaceMenu left that part out. CharSelect now adds back any part of a look that RaceMenu skips. | Fixed in 0.9.10 |
+| NPCs who live in the lobby's location (Mikael and Uthgerd in the Bannered Mare, Lydia from Housecarls Pre-Thaneship) | They came back wiped: no spells, perks or keywords. Lydia lost her hair colour too, so her hair went pink and OBody crashed the game reading it. | Fixed in 0.9.7 |
+| RaceMenu, with hair from a light (ESL) plugin, e.g. KS Hairdos SMP | The hair showed up as a default one in the lobby, because RaceMenu left that part out. The mod now adds back any part of a look that RaceMenu skips. | Fixed in 0.9.10 |
 
-If something looks wrong only after using the select screen, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`, ideally with `bDebugLog = 1`. The log has your characters' names and the mods involved, but leaves your Windows user name out of any paths.
+If something looks wrong only after using the lobby, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`, ideally with `bDebugLog = 1`. The log has your characters' names and the mods involved, but leaves your Windows user name out of any paths.
 
 ## Known limitations
 
-- **Enter doesn't warn about missing mods.** The game's "missing content" warning only shows up through **Load**. If you've removed mods since you last played a character, use **Load** for them.
-- **A character who used RaceMenu partway through a playthrough can show up twice**, because Skyrim gives them a new ID. The old one is still under **Load**.
-- **Script errors from other mods at startup are normal.** They're setting up in the background game and may complain in the Papyrus log.
-- **Not tested yet:** 1.6.1170, 1.5.97, Mod Organizer 2, other main menu mods, ultrawide screens, and more than six characters (the editor's list gets cramped).
-- **Mods that change a location** (interior overhauls and the like) can move its furniture, so someone might end up standing instead of sitting. Fix it with F8.
+- **Enter doesn't show the "missing content" warning.** If you've removed mods since you last played a character, load them with the standard **Load** menu instead.
+- **A character who used RaceMenu partway through a playthrough gets a new ID**, so they can show up twice. The old one is still under **Load**.
+- **Location overhauls can move furniture around**, so a character might stand instead of sit. Fix it with F8.
+- **More than six characters gets cramped** in the layout editor.
+- **Script errors from other mods at startup are normal.** They're setting up in the lobby's game and may complain in the Papyrus log.
+- **Not tested yet:** 1.6.1170, 1.5.97, Mod Organizer 2, other main menu mods, ultrawide screens.
 
 ## Uninstalling
 
-Remove it with your mod manager. CharSelect also writes a few files per character that your mod manager doesn't know about. You can delete them any time; they come back the next time you load or save that character with CharSelect installed.
+Remove it with your mod manager. It leaves a few small files per character behind. They're safe to delete any time, and come back the next time you load or save that character with the mod installed.
 
 | What | Where |
 |---|---|
@@ -110,7 +111,7 @@ Remove it with your mod manager. CharSelect also writes a few files per characte
 | RaceMenu preset | `<Skyrim>\Data\SKSE\Plugins\CharGen\Exported\CharSelect_<ID>.jslot` |
 | Character details, your layout, the logs | `Documents\My Games\Skyrim Special Edition\SKSE\CharSelect\`, plus `...\SKSE\CharSelect.log` and `CharSelect.1.log` (the session before) |
 
-`<ID>` is the 8 characters after the save number in your save file names, like `5E6F7A8B`. With Mod Organizer 2, the files under `Data` land in the overwrite folder. In the two `Exported` folders, only delete files starting with `CharSelect_`: the rest are RaceMenu's. On the GOG version, `Skyrim Special Edition` in the `Documents` paths is `Skyrim Special Edition GOG`.
+`<ID>` is the 8 characters after the save number in your save file names, like `5E6F7A8B`. With Mod Organizer 2, the files under `Data` land in the overwrite folder. In the two `Exported` folders, only delete files starting with `CharSelect_`, the rest are RaceMenu's. On the GOG version, `Skyrim Special Edition` in the `Documents` paths is `Skyrim Special Edition GOG`.
 
 ## Building from source
 
@@ -127,10 +128,12 @@ ctest --preset release              # runs the tests
 
 On Visual Studio 2022, change the generator in `CMakePresets.json` to `Visual Studio 17 2022`. The first build compiles CommonLibSSE-NG, so it takes a while.
 
-How the code fits together, and everything learned about the engine along the way, is in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Notes on how the code fits together, and what's been learned about the engine along the way, are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Credits
 
 Made by **portalfl0w**. Built on [CommonLibSSE-NG](https://github.com/alandtse/CommonLibSSE-NG). Thanks to the SKSE team, and to expired6978 for RaceMenu.
+
+Claude Code and Opus 5.5 were used in the creation of this mod.
 
 Released under the [MIT License](LICENSE).
