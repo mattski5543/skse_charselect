@@ -1,6 +1,6 @@
 # CharSelect
 
-![Five characters gathered around the fire in the Bannered Mare](docs/images/cover.jpg)
+![Five characters gathered around the fire in the Bannered Mare](docs/images/cover.png)
 
 A character select screen for Skyrim. Instead of the main menu you get all your characters standing together, in their own looks and gear. Pick one, press **Enter**, and you're in their latest save.
 
