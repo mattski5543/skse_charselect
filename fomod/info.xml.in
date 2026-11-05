@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <fomod>
-	<Name>CharSelect</Name>
+	<Name>Character Select</Name>
 	<Author>@PROJECT_AUTHOR@</Author>
 	<Version>@PROJECT_VERSION@</Version>
-	<Description>A character select screen in place of the main menu: your characters gathered in one place, each in their own look and gear.</Description>
+	<Description>An SKSE plugin that starts your game up in a highly customizable lobby with characters from your saves.</Description>
 	<Groups>
 		<element>User Interface</element>
 	</Groups>
