@@ -11,3 +11,5 @@ CLAUDE.local.md
 RELEASE_PLAN.md
 # Installer screenshots: packaged from a local copy, not tracked
 fomod/images/
+# Nexus page text, kept with the release plan
+NEXUS_DESCRIPTION.txt
