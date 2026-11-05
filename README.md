@@ -15,6 +15,14 @@ A character select screen for Skyrim. Instead of the main menu you get all your 
 - Keyboard, mouse and controller.
 - No `.esp`.
 
+## How it works
+
+While you play, CharSelect records each character's look whenever you load or save: a RaceMenu preset, their face tint and what they're wearing.
+
+At the main menu it does a `coc` into the location you picked, same as typing it in the console. That starts a fresh, throwaway game in the background. Each recorded character is spawned there as a temporary NPC with their own look and gear, the people who normally live there are hidden, you become the camera, and saving is switched off.
+
+Press **Enter** and it loads that character's latest save, just like loading from any other game. Leaving the throwaway game makes Skyrim reset some game data, so CharSelect puts that back once your save has loaded (see [Compatibility](#compatibility)).
+
 ## Requirements
 
 - Skyrim SE or AE. Tested on 1.7.104. 1.6.1170 and 1.5.97 should work but haven't been tested. No VR.
@@ -64,7 +72,7 @@ As far as I can tell, yes. CharSelect never writes or changes a save file, and s
 
 ## Compatibility
 
-The select screen is really a separate game running in the background, so your other mods start up in it as usual. Most don't care. The catch is what happens when you leave: Skyrim resets some records back to how they are in their plugin files. That doesn't happen on a normal load in your own game, but it does any time you leave a game started with `coc` from the main menu, which is how the select screen gets going. Mods that change records once per session can lose those changes.
+Your other mods start up in the select screen's background game as usual, and most don't care. The catch is what happens when you leave it: Skyrim resets some records back to how they are in their plugin files. That doesn't happen on a normal load in your own game, but it does any time you leave a game started with `coc` from the main menu, which is how the select screen gets going. Mods that change records once per session can lose those changes.
 
 CharSelect deals with this. Right before the select screen's game ends it takes note of what's there, and once your save has loaded it puts back what got reset:
 
