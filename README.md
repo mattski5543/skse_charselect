@@ -4,6 +4,8 @@
 
 An SKSE plugin that swaps Skyrim's main menu for a lobby with the characters from your saves. Pick one, press **Enter**, and it loads their latest save.
 
+**Download:** [Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/198132), or the [GitHub releases](https://github.com/mattski5543/skse_charselect/releases).
+
 ## Features
 
 - Your latest saves become characters in the lobby, including their equipment, overlays etc.
@@ -31,7 +33,7 @@ An SKSE plugin that swaps Skyrim's main menu for a lobby with the characters fro
 ## Installation
 
 - It's fine to install or uninstall any time. The mod doesn't touch your save data.
-- Install with Vortex or Mod Organizer 2 and pick a location in the installer: the Bannered Mare, the Ragged Flagon, Sky Haven Temple, High Hrothgar or Sovngarde. You can change it later with `sLobbyCell`.
+- Install from [Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/198132) with Vortex or Mod Organizer 2 and pick a location in the installer: the Bannered Mare, the Ragged Flagon, Sky Haven Temple, High Hrothgar or Sovngarde. You can change it later with `sLobbyCell`.
 - Load each character once so Character Select can record them. Until then they show up as a hooded stand-in (you can still play them).
 
 ## Controls
