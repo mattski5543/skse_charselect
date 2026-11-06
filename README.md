@@ -137,4 +137,4 @@ Made by **portalfl0w**. Built on [CommonLibSSE-NG](https://github.com/alandtse/C
 
 Claude Code and Opus 5.5 were used in the creation of this mod.
 
-Released under the [MIT License](LICENSE).
+Released under the [GNU GPL, version 3 or later](LICENSE), because CommonLibSSE-NG is. You're free to use, change and share it, as long as what you share stays under the same licence with its source available. The licences of the libraries built into the DLL are in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt), and both files come with the download. (The first upload of 1.0.0 said MIT, which was a mistake.)

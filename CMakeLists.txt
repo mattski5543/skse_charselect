@@ -107,6 +107,7 @@ endif()
 #               the layouts and the menu movie, always installed
 #   Locations/  one CharSelect.ini per select screen location, one installed
 #   fomod/      the installer (fomod/ in the repo; see cmake/StageFomod.cmake)
+#   LICENSE.txt, THIRD_PARTY_NOTICES.txt  the GPL and the libraries' licences
 # Optionally also copy straight into a mod folder by configuring with
 # -DDEPLOY_DIR="<path to mod folder>".
 # ------------------------------------------------------------------------------
@@ -121,6 +122,10 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E rm -f "${STAGE_DIR}/Core/SKSE/Plugins/CharSelect.ini"
 	COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> "${STAGE_DIR}/Core/SKSE/Plugins/"
 	COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}.public.pdb" "${STAGE_DIR}/Core/SKSE/Plugins/${PROJECT_NAME}.pdb"
+	# GPL: the licence and the bundled libraries' notices go with the binary
+	# (in the archive root, which the installer doesn't copy into Data).
+	COMMAND ${CMAKE_COMMAND} -E copy "${PROJECT_SOURCE_DIR}/LICENSE" "${STAGE_DIR}/LICENSE.txt"
+	COMMAND ${CMAKE_COMMAND} -E copy "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt" "${STAGE_DIR}/"
 	COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -DSTAGE_DIR=${STAGE_DIR}
 		-DPROJECT_VERSION=${PROJECT_VERSION} -DPROJECT_AUTHOR=${PROJECT_AUTHOR}
 		-P "${PROJECT_SOURCE_DIR}/cmake/StageFomod.cmake"
@@ -128,7 +133,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 # Separate step: WORKING_DIRECTORY must already exist when the step starts.
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E rm -f "${DIST_ZIP}"
-	COMMAND ${CMAKE_COMMAND} -E tar cf "${DIST_ZIP}" --format=zip -- fomod Core Locations
+	COMMAND ${CMAKE_COMMAND} -E tar cf "${DIST_ZIP}" --format=zip -- fomod Core Locations LICENSE.txt THIRD_PARTY_NOTICES.txt
 	WORKING_DIRECTORY "${STAGE_DIR}"
 	COMMENT "Packaging ${DIST_ZIP}")
 
