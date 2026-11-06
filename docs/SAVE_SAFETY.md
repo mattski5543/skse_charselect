@@ -27,7 +27,7 @@ That's normal for Skyrim, it's what happens every time you die and reload, and t
 2. Turn the mod off completely in the mod manager, load the same save from the normal main menu and save straight away: save **A**.
 3. Compare A and B, and both against the save they were loaded from: every object the save records, the scripts, and what each SKSE plugin keeps in the `.skse` file next to the save.
 
-The save was my level 68 character's long-running game, standing in Riften. Leaving the lobby reset a skin mod's skins, so the mod had repairs to make there.
+The save was my level 68 character's long-running game, standing in Riften. Leaving the lobby reset some skins my skin mods had set up, so the mod had repairs to make there.
 
 **Results:**
 

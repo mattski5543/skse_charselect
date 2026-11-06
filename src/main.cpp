@@ -116,7 +116,7 @@ namespace
 				// For PostLoadGame SKSE stores the success flag in the pointer value itself.
 				const bool success = a_msg->data != nullptr;
 				logger::info("SKSE message: {} (success={})", MessageName(a_msg->type), success);
-				// Before that skin mod redraws NPCs with the reverted skins.
+				// Before mods that redraw NPCs pick up the reverted skins.
 				charselect::resetguard::Restore(success ? "load" : "failed load", success);
 				charselect::lobby::OnPostLoadGame(success);
 				charselect::sidecar::OnPostLoadGame(success);  // after the lobby has gone idle

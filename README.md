@@ -87,8 +87,7 @@ Mods it's been checked with:
 
 | Mod | What happened | Status |
 |---|---|---|
-| A skin mod | Men lost their hands after the lobby. The skin mod fills in its own skins once per session and the reset emptied them. | Fixed in 0.9.3 |
-| Skins handed out at startup (SPID, other skin distributors, Exquisite NPCs) | Some characters lost their skin for the session. | Fixed in 0.9.3 |
+| Skin distribution mods (SPID and others that hand out or build skins at startup, Exquisite NPCs) | Some characters lost their skin, or parts of it like their hands, for the session. These mods set skins up once per session and the reset emptied them. | Fixed in 0.9.3 |
 | NPCs who live in the lobby's location (Mikael and Uthgerd in the Bannered Mare, Lydia from Housecarls Pre-Thaneship) | They came back wiped: no spells, perks or keywords. Lydia lost her hair colour too, so her hair went pink and OBody crashed the game reading it. | Fixed in 0.9.7 |
 | RaceMenu, with hair from a light (ESL) plugin, e.g. KS Hairdos SMP | The hair showed up as a default one in the lobby, because RaceMenu left that part out. The mod now adds back any part of a look that RaceMenu skips. | Fixed in 0.9.10 |
 
