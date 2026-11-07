@@ -1111,6 +1111,27 @@ namespace charselect::lobby
 			return main && main->GetRuntimeData().resetGame;
 		}
 
+		std::uint32_t g_cameraFixes{ 0 };  // this lobby: times first person was put back
+
+		// The lobby is seen through its player's eyes (PlacePlayer). Mods that
+		// switch to third person, such as Immersive Equipping Animations when
+		// something equips the lobby's player at startup, would show that player
+		// from behind instead, so first person is put back.
+		void KeepFirstPerson()
+		{
+			auto* camera = RE::PlayerCamera::GetSingleton();
+			if (!camera || camera->IsInFirstPerson()) {
+				return;
+			}
+			const int state = camera->currentState ? static_cast<int>(camera->currentState->id) : -1;
+			camera->ForceFirstPerson();
+			if (++g_cameraFixes == 1) {
+				logger::info("Lobby: something took the camera out of first person (camera state {}); put back", state);
+			} else if (g_cameraFixes <= 5) {
+				logger::debug("Lobby: camera out of first person again (camera state {}); put back", state);
+			}
+		}
+
 		void KeepCellClear(std::uint32_t a_generation)
 		{
 			if (a_generation != g_enterGeneration || g_state != State::kActive) {
@@ -1121,6 +1142,7 @@ namespace charselect::lobby
 				return;
 			}
 			HideOtherActors();
+			KeepFirstPerson();
 			KeepOverlaysHidden();
 			RunAfter(kKeepClearInterval, [a_generation]() { KeepCellClear(a_generation); });
 		}
@@ -1468,6 +1490,7 @@ namespace charselect::lobby
 			auto* cell = a_player->GetParentCell();
 			SetState(State::kActive);
 			BlockSaving(true);
+			g_cameraFixes = 0;
 			LogPlayer("at staging");
 			HideOtherActors();
 			ApplyTimeAndWeather();
