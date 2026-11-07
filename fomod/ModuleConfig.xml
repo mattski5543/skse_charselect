@@ -81,8 +81,8 @@
 								<type name="Recommended" />
 							</typeDescriptor>
 						</plugin>
-						<plugin name="When going back to the main menu">
-							<description>The normal main menu when the game starts. Going back to the main menu from a game opens the lobby instead. F7 opens it from the main menu any time.</description>
+						<plugin name="After playing">
+							<description>Normal main menu at start. The lobby opens when you quit to the main menu.</description>
 							<conditionFlags>
 								<flag name="mainmenu">Return</flag>
 							</conditionFlags>
@@ -91,7 +91,7 @@
 							</typeDescriptor>
 						</plugin>
 						<plugin name="Only with F7">
-							<description>Always the normal main menu. Press F7 there to open the lobby.</description>
+							<description>Normal main menu. Press F7 to open the lobby.</description>
 							<conditionFlags>
 								<flag name="mainmenu">Hotkey</flag>
 							</conditionFlags>
