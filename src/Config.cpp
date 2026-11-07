@@ -32,7 +32,7 @@ namespace charselect::config
 		}
 
 		const auto& s = g_settings;
-		logger::info("Config: replaceMainMenu={} atStartup={} hotkey={:#x} debugLog={} cell='{}' fallback='{}' max={}", s.replaceMainMenu,
-			s.replaceAtStartup, s.lobbyHotkey, s.debugLog, s.lobbyCell, s.fallbackCell, s.maxCharacters);
+		logger::info("Config: replaceMainMenu={} atStartup={} onLoad={} hotkey={:#x} debugLog={} cell='{}' fallback='{}' max={}", s.replaceMainMenu,
+			s.replaceAtStartup, s.lobbyOnLoad, s.lobbyHotkey, s.debugLog, s.lobbyCell, s.fallbackCell, s.maxCharacters);
 	}
 }

@@ -34,7 +34,7 @@ An SKSE plugin that swaps Skyrim's main menu for a lobby with the characters fro
 
 - It's fine to install or uninstall any time. The mod doesn't touch your save data.
 - Install from [Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/198132) with Vortex or Mod Organizer 2 and pick a location in the installer: the Bannered Mare, the Ragged Flagon, Sky Haven Temple, High Hrothgar or Sovngarde. You can change it later with `sLobbyCell`.
-- The installer also asks when to show the lobby: always (the default), after playing (normal main menu at start, the lobby when you quit to the main menu), or only with F7. You can change that later with `bReplaceMainMenu` and `bReplaceAtStartup`.
+- The installer also asks when to show the lobby: always (the default), after playing (normal main menu at start, the lobby when you quit to the main menu), on Load (the main menu's Load button opens it), or only with F7. You can change that later with `bReplaceMainMenu`, `bReplaceAtStartup` and `bLobbyOnLoad`.
 - Load each character once so Character Select can record them. Until then they show up as a hooded stand-in (you can still play them).
 
 ## Controls
@@ -59,6 +59,7 @@ In `Data\SKSE\Plugins\CharSelect.ini`. Delete a line to go back to its default.
 |---|---|---|
 | `bReplaceMainMenu` | `1` | `0` keeps the normal main menu. F7 there opens the lobby. |
 | `bReplaceAtStartup` | `1` | `0` keeps the normal main menu when the game starts, and shows the lobby only when you go back to the main menu from a game. |
+| `bLobbyOnLoad` | `0` | `1` makes the main menu's Load button open the lobby. |
 | `iLobbyHotkey` | `0x41` (F7) | The key that opens the lobby from the main menu. |
 | `bDebugLog` | `0` | `1` writes a detailed `CharSelect.log`, for reporting a problem. |
 | `sLobbyCell` | your installer choice | The lobby's location (a cell editor ID): `WhiterunBanneredMare`, `RiftenRaggedFlagon`, `SkyHavenTemple`, `HighHrothgarEntrance`, `SovngardeMeadHall`, or [your own](docs/CUSTOM_LOBBY.md). |

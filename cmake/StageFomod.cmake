@@ -3,8 +3,8 @@
 #   STAGE_DIR/fomod/info.xml, ModuleConfig.xml, and images/ if fomod/images exists
 #   STAGE_DIR/Locations/<location>/<mode>/SKSE/Plugins/CharSelect.ini, one for
 #   every line of fomod/locations.txt and fomod/mainmenu.txt together: the
-#   shipped CharSelect.ini with that sLobbyCell, bReplaceMainMenu and
-#   bReplaceAtStartup.
+#   shipped CharSelect.ini with that sLobbyCell, bReplaceMainMenu,
+#   bReplaceAtStartup and bLobbyOnLoad.
 # Arguments: -DSOURCE_DIR=... -DSTAGE_DIR=... -DPROJECT_VERSION=... -DPROJECT_AUTHOR=...
 
 foreach(arg SOURCE_DIR STAGE_DIR PROJECT_VERSION PROJECT_AUTHOR)
@@ -22,7 +22,7 @@ if(EXISTS "${SOURCE_DIR}/fomod/images")
 endif()
 
 file(READ "${SOURCE_DIR}/dist-files/SKSE/Plugins/CharSelect.ini" ini)
-foreach(key sLobbyCell bReplaceMainMenu bReplaceAtStartup)
+foreach(key sLobbyCell bReplaceMainMenu bReplaceAtStartup bLobbyOnLoad)
 	string(REGEX MATCHALL "\n${key} = [^\r\n]*" found "${ini}")
 	list(LENGTH found count)
 	if(NOT count EQUAL 1)
@@ -36,7 +36,7 @@ foreach(line IN LISTS mode_lines)
 	if(line MATCHES "^#" OR line STREQUAL "")
 		continue()
 	endif()
-	if(NOT line MATCHES "^[A-Za-z0-9]+=[01],[01]$")
+	if(NOT line MATCHES "^[A-Za-z0-9]+=[01],[01],[01]$")
 		message(FATAL_ERROR "StageFomod.cmake: bad line in mainmenu.txt: '${line}'")
 	endif()
 	list(APPEND modes "${line}")
@@ -54,12 +54,14 @@ foreach(line IN LISTS lines)
 	set(cell "${CMAKE_MATCH_2}")
 	string(REGEX REPLACE "\nsLobbyCell = [^\r\n]*" "\nsLobbyCell = ${cell}" located "${ini}")
 	foreach(mode IN LISTS modes)
-		string(REGEX MATCH "^([A-Za-z0-9]+)=([01]),([01])$" parsed "${mode}")
+		string(REGEX MATCH "^([A-Za-z0-9]+)=([01]),([01]),([01])$" parsed "${mode}")
 		set(mode_folder "${CMAKE_MATCH_1}")
 		set(replace "${CMAKE_MATCH_2}")
 		set(at_startup "${CMAKE_MATCH_3}")
+		set(on_load "${CMAKE_MATCH_4}")
 		string(REGEX REPLACE "\nbReplaceMainMenu = [^\r\n]*" "\nbReplaceMainMenu = ${replace}" out "${located}")
 		string(REGEX REPLACE "\nbReplaceAtStartup = [^\r\n]*" "\nbReplaceAtStartup = ${at_startup}" out "${out}")
+		string(REGEX REPLACE "\nbLobbyOnLoad = [^\r\n]*" "\nbLobbyOnLoad = ${on_load}" out "${out}")
 		file(WRITE "${STAGE_DIR}/Locations/${folder}/${mode_folder}/SKSE/Plugins/CharSelect.ini" "${out}")
 	endforeach()
 endforeach()

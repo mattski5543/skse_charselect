@@ -216,3 +216,10 @@ TEST_CASE("bReplaceAtStartup", "[config]")
 	CHECK_FALSE(ParseText("[General]\nbReplaceAtStartup = 0\n").replaceAtStartup);
 	CHECK(ParseText("[General]\nbReplaceAtStartup = 1\n").replaceAtStartup);
 }
+
+TEST_CASE("bLobbyOnLoad", "[config]")
+{
+	CHECK_FALSE(Settings{}.lobbyOnLoad);
+	CHECK(ParseText("[General]\nbLobbyOnLoad = 1\n").lobbyOnLoad);
+	CHECK_FALSE(ParseText("[General]\nbLobbyOnLoad = 0\n").lobbyOnLoad);
+}

@@ -90,6 +90,15 @@
 								<type name="Optional" />
 							</typeDescriptor>
 						</plugin>
+						<plugin name="On Load">
+							<description>Normal main menu. Load opens the lobby.</description>
+							<conditionFlags>
+								<flag name="mainmenu">Load</flag>
+							</conditionFlags>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
 						<plugin name="Only with F7">
 							<description>Normal main menu. Press F7 to open the lobby.</description>
 							<conditionFlags>
@@ -127,6 +136,15 @@
 			<pattern>
 				<dependencies operator="And">
 					<flagDependency flag="location" value="BanneredMare" />
+					<flagDependency flag="mainmenu" value="Load" />
+				</dependencies>
+				<files>
+					<folder source="Locations\BanneredMare\Load" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="BanneredMare" />
 					<flagDependency flag="mainmenu" value="Hotkey" />
 				</dependencies>
 				<files>
@@ -149,6 +167,15 @@
 				</dependencies>
 				<files>
 					<folder source="Locations\RaggedFlagon\Return" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="RaggedFlagon" />
+					<flagDependency flag="mainmenu" value="Load" />
+				</dependencies>
+				<files>
+					<folder source="Locations\RaggedFlagon\Load" destination="" />
 				</files>
 			</pattern>
 			<pattern>
@@ -181,6 +208,15 @@
 			<pattern>
 				<dependencies operator="And">
 					<flagDependency flag="location" value="SkyHavenTemple" />
+					<flagDependency flag="mainmenu" value="Load" />
+				</dependencies>
+				<files>
+					<folder source="Locations\SkyHavenTemple\Load" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="SkyHavenTemple" />
 					<flagDependency flag="mainmenu" value="Hotkey" />
 				</dependencies>
 				<files>
@@ -208,6 +244,15 @@
 			<pattern>
 				<dependencies operator="And">
 					<flagDependency flag="location" value="HighHrothgar" />
+					<flagDependency flag="mainmenu" value="Load" />
+				</dependencies>
+				<files>
+					<folder source="Locations\HighHrothgar\Load" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="HighHrothgar" />
 					<flagDependency flag="mainmenu" value="Hotkey" />
 				</dependencies>
 				<files>
@@ -230,6 +275,15 @@
 				</dependencies>
 				<files>
 					<folder source="Locations\Sovngarde\Return" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="Sovngarde" />
+					<flagDependency flag="mainmenu" value="Load" />
+				</dependencies>
+				<files>
+					<folder source="Locations\Sovngarde\Load" destination="" />
 				</files>
 			</pattern>
 			<pattern>

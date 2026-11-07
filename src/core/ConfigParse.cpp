@@ -54,6 +54,8 @@ namespace charselect::config
 					a_settings.replaceMainMenu = ParseBool(value);
 				} else if (id == "general.breplaceatstartup") {
 					a_settings.replaceAtStartup = ParseBool(value);
+				} else if (id == "general.blobbyonload") {
+					a_settings.lobbyOnLoad = ParseBool(value);
 				} else if (id == "general.ilobbyhotkey") {
 					a_settings.lobbyHotkey = static_cast<std::uint32_t>(std::stoul(value, nullptr, 0));
 				} else if (id == "general.bdebuglog") {

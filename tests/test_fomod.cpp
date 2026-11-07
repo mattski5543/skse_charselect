@@ -63,7 +63,7 @@ namespace
 
 	// folder, cell editor ID
 	std::vector<std::pair<std::string, std::string>> Locations() { return ReadList("locations.txt"); }
-	// folder, "<bReplaceMainMenu>,<bReplaceAtStartup>"
+	// folder, "<bReplaceMainMenu>,<bReplaceAtStartup>,<bLobbyOnLoad>"
 	std::vector<std::pair<std::string, std::string>> MainMenuModes() { return ReadList("mainmenu.txt"); }
 
 	// The INI line "<key> = <value>" exactly once, whatever the line endings.
@@ -98,7 +98,13 @@ TEST_CASE("The installer offers every main menu choice", "[fomod][shipped]")
 	for (const auto& [folder, values] : modes) {
 		INFO(folder << " = " << values);
 		CHECK(Count(config, "<flag name=\"mainmenu\">" + folder + "</flag>") == 1);
-		CHECK((values == "0,0" || values == "0,1" || values == "1,0" || values == "1,1"));
+		// Three 0/1 values, like "1,0,1".
+		REQUIRE(values.size() == 5);
+		CHECK(values[1] == ',');
+		CHECK(values[3] == ',');
+		for (const char c : { values[0], values[2], values[4] }) {
+			CHECK((c == '0' || c == '1'));
+		}
 	}
 }
 
@@ -144,8 +150,10 @@ TEST_CASE("The shipped CharSelect.ini uses the installer's defaults", "[fomod][s
 	CHECK(Count(ini, "\nsLobbyCell = ") == 1);
 	CHECK(Count(ini, "\nbReplaceMainMenu = ") == 1);
 	CHECK(Count(ini, "\nbReplaceAtStartup = ") == 1);
+	CHECK(Count(ini, "\nbLobbyOnLoad = ") == 1);
 	CHECK(CountLine(ini, "sLobbyCell = " + Locations().front().second) == 1);
-	const auto values = MainMenuModes().front().second;  // "<bReplaceMainMenu>,<bReplaceAtStartup>"
+	const auto values = MainMenuModes().front().second;  // "<bReplaceMainMenu>,<bReplaceAtStartup>,<bLobbyOnLoad>"
 	CHECK(CountLine(ini, std::string("bReplaceMainMenu = ") + values[0]) == 1);
 	CHECK(CountLine(ini, std::string("bReplaceAtStartup = ") + values[2]) == 1);
+	CHECK(CountLine(ini, std::string("bLobbyOnLoad = ") + values[4]) == 1);
 }

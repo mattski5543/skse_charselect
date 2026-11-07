@@ -91,6 +91,50 @@ namespace charselect::frontend
 			return false;
 		}
 
+		// bLobbyOnLoad: the main menu's Load button opens the lobby. Load asks
+		// the game for the save list (PopulateCharacterList) before showing it,
+		// whatever the menu looks like, so that callback is swapped for one that
+		// opens the lobby instead, on each main menu that opens. When the lobby
+		// can't open, the game's own runs and Load works as normal.
+		RE::FxDelegateHandler::CallbackFn* g_populateCharacterList{ nullptr };
+
+		void OnLoadPressed(const RE::FxDelegateArgs& a_args)
+		{
+			bool toLobby = false;
+			Guarded("Load button", [&]() {
+				toLobby = g_atMainMenu && g_raceMenu && !SelectMenu::MovieFailed() && lobby::GetState() == lobby::State::kIdle &&
+				          !lobby::LoadFailedRecently();
+				if (toLobby) {
+					logger::info("Frontend: Load pressed on the main menu; opening the lobby (bLobbyOnLoad)");
+					QueueTask([]() { EnterFromHotkey(); });
+				}
+			});
+			if (!toLobby && g_populateCharacterList) {
+				g_populateCharacterList(a_args);
+			}
+		}
+
+		// UI thread.
+		void TakeOverLoadButton()
+		{
+			auto menu = MainMenu();
+			if (!menu || !menu->fxDelegate) {
+				return;
+			}
+			for (auto& entry : menu->fxDelegate->callbacks) {
+				if (text::Lower(entry.first.c_str()) != "populatecharacterlist" || !entry.second.callback) {
+					continue;
+				}
+				if (entry.second.callback != &OnLoadPressed) {
+					g_populateCharacterList = entry.second.callback;
+					entry.second.callback = &OnLoadPressed;
+					logger::debug("Frontend: the main menu's Load opens the lobby");
+				}
+				return;
+			}
+			logger::warn("Frontend: the main menu has no Load callback (PopulateCharacterList); Load works as normal");
+		}
+
 		void PerformPending(Action a_action)
 		{
 			logger::info("Frontend: performing pending action {}", ActionName(a_action));
@@ -249,6 +293,9 @@ namespace charselect::frontend
 		RunAfter(std::chrono::milliseconds(300), []() {
 			if (!g_atMainMenu) {
 				return;
+			}
+			if (config::Get().lobbyOnLoad) {
+				QueueUITask(TakeOverLoadButton);
 			}
 			if (g_pending != Action::kNone) {
 				const auto action = std::exchange(g_pending, Action::kNone);
