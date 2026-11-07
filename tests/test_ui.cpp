@@ -74,3 +74,25 @@ TEST_CASE("Key repeat reset on a fresh press", "[ui]")
 	CHECK_FALSE(repeat.Due(1, 0.1f));
 	CHECK(repeat.Due(1, 0.36f));
 }
+
+TEST_CASE("Other mods' HUD menus hidden in the lobby", "[ui]")
+{
+	SECTION("a mod's always-open widget menu")
+	{
+		CHECK(IsOtherModsHudMenu("equipWidget_STB", true));
+		CHECK(IsOtherModsHudMenu("TrueHUD", true));
+	}
+	SECTION("only menus that are always open")
+	{
+		CHECK_FALSE(IsOtherModsHudMenu("equipWidget_STB", false));
+	}
+	SECTION("never the game's own menus, nor the lobby's")
+	{
+		CHECK_FALSE(IsOtherModsHudMenu("HUD Menu", true));
+		CHECK_FALSE(IsOtherModsHudMenu("Cursor Menu", true));
+		CHECK_FALSE(IsOtherModsHudMenu("Fader Menu", true));
+		CHECK_FALSE(IsOtherModsHudMenu("Loading Menu", true));
+		CHECK_FALSE(IsOtherModsHudMenu("CharSelectMenu", true));
+		CHECK_FALSE(IsOtherModsHudMenu("", true));
+	}
+}

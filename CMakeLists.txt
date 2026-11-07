@@ -6,6 +6,16 @@ project(
 	VERSION 1.0.0
 	LANGUAGES CXX)
 
+# Test builds keep the release version and add a beta number: "b1" makes
+# CharSelect-1.0.0-b1.zip, and the log and installer say 1.0.0-b1. Empty for a
+# release; the version itself only changes for one.
+set(CHARSELECT_BETA "b1")
+if(CHARSELECT_BETA)
+	set(CHARSELECT_DISPLAY_VERSION "${PROJECT_VERSION}-${CHARSELECT_BETA}")
+else()
+	set(CHARSELECT_DISPLAY_VERSION "${PROJECT_VERSION}")
+endif()
+
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 	message(FATAL_ERROR "In-source builds are not allowed. Use a preset (cmake --preset release).")
 endif()
@@ -51,6 +61,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
 	SOURCES ${PLUGIN_SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_compile_definitions(${PROJECT_NAME} PRIVATE CHARSELECT_DISPLAY_VERSION="${CHARSELECT_DISPLAY_VERSION}")
 target_precompile_headers(${PROJECT_NAME} PRIVATE "${PROJECT_SOURCE_DIR}/src/PCH.h")
 # Includes <windows.h>, which clashes with CommonLib's own Win32 declarations.
 set_source_files_properties("${PROJECT_SOURCE_DIR}/src/core/Encoding.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
@@ -112,7 +123,7 @@ endif()
 # -DDEPLOY_DIR="<path to mod folder>".
 # ------------------------------------------------------------------------------
 set(STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/package")
-set(DIST_ZIP "${PROJECT_SOURCE_DIR}/dist/${PROJECT_NAME}-${PROJECT_VERSION}.zip")
+set(DIST_ZIP "${PROJECT_SOURCE_DIR}/dist/${PROJECT_NAME}-${CHARSELECT_DISPLAY_VERSION}.zip")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E remove_directory "${STAGE_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "${STAGE_DIR}/Core/SKSE/Plugins" "${PROJECT_SOURCE_DIR}/dist"
@@ -127,7 +138,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy "${PROJECT_SOURCE_DIR}/LICENSE" "${STAGE_DIR}/LICENSE.txt"
 	COMMAND ${CMAKE_COMMAND} -E copy "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt" "${STAGE_DIR}/"
 	COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -DSTAGE_DIR=${STAGE_DIR}
-		-DPROJECT_VERSION=${PROJECT_VERSION} -DPROJECT_AUTHOR=${PROJECT_AUTHOR}
+		-DPROJECT_VERSION=${CHARSELECT_DISPLAY_VERSION} -DPROJECT_AUTHOR=${PROJECT_AUTHOR}
 		-P "${PROJECT_SOURCE_DIR}/cmake/StageFomod.cmake"
 	COMMENT "Staging ${PROJECT_NAME} package")
 # Separate step: WORKING_DIRECTORY must already exist when the step starts.

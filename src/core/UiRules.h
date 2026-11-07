@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -18,6 +19,12 @@ namespace charselect::ui
 	// on-screen order a_order (a_dir -1 left, +1 right). nullopt at either
 	// end (no wrap) or if a_selected isn't shown.
 	[[nodiscard]] std::optional<std::size_t> StepSelection(const std::vector<std::size_t>& a_order, std::size_t a_selected, int a_dir);
+
+	// While the lobby is up, other mods' HUD widgets drawn as their own menus
+	// (STB Widgets and the like) are hidden along with the game's HUD. True
+	// for such a menu: always open, and neither one of the game's own menus
+	// nor ours.
+	[[nodiscard]] bool IsOtherModsHudMenu(std::string_view a_name, bool a_alwaysOpen);
 
 	// Held-button repeat for the layout editor's arrows (the press itself is
 	// handled by the caller): nothing until held for kDelay, then once every

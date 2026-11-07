@@ -23,6 +23,19 @@ namespace charselect::ui
 		return std::format("{} {} {}", day, kMonths[month - 1], a_when.substr(0, 4));
 	}
 
+	bool IsOtherModsHudMenu(std::string_view a_name, bool a_alwaysOpen)
+	{
+		// Every menu the game registers (CommonLibSSE-NG's MENU_NAMEs), and the
+		// lobby's own.
+		static constexpr std::array<std::string_view, 37> kNotOthers{ "BarterMenu", "Book Menu", "Console", "Console Native UI Menu",
+			"ContainerMenu", "Crafting Menu", "Creation Club Menu", "Credits Menu", "Cursor Menu", "Dialogue Menu", "Fader Menu",
+			"FavoritesMenu", "GiftMenu", "HUD Menu", "InventoryMenu", "Journal Menu", "Kinect Menu", "LevelUp Menu", "LoadWaitSpinner",
+			"Loading Menu", "Lockpicking Menu", "MagicMenu", "Main Menu", "MapMenu", "MessageBoxMenu", "Mist Menu", "Mod Manager Menu",
+			"RaceSex Menu", "SafeZoneMenu", "Sleep/Wait Menu", "StatsMenu", "TitleSequence Menu", "Training Menu", "Tutorial Menu",
+			"TweenMenu", "WSActivateRollover", "CharSelectMenu" };
+		return a_alwaysOpen && !a_name.empty() && std::ranges::find(kNotOthers, a_name) == kNotOthers.end();
+	}
+
 	std::optional<std::size_t> StepSelection(const std::vector<std::size_t>& a_order, std::size_t a_selected, int a_dir)
 	{
 		const auto it = std::ranges::find(a_order, a_selected);

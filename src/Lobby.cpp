@@ -16,6 +16,7 @@
 #include "core/Encoding.h"
 #include "core/FormKey.h"
 #include "core/LayoutMath.h"
+#include "core/UiRules.h"
 
 namespace charselect::lobby
 {
@@ -218,6 +219,169 @@ namespace charselect::lobby
 				g_hudHidden = !a_visible;
 				logger::debug("Lobby: HUD {}", a_visible ? "shown" : "hidden");
 			}
+		}
+
+		// Other mods' HUD widgets, hidden with the game's HUD. Widgets drawn as
+		// their own always-open menus (STB Widgets and the like) are switched
+		// off directly. Overlays drawn outside the game's menus (SKSE Menu
+		// Framework widgets such as Minimal Vitals) can't be, but some hide
+		// along with the compass, which switching the HUD movie off doesn't
+		// change, so the compass is hidden too. All of it runs on the UI thread
+		// (Scaleform isn't thread-safe), and this state is only used there.
+		namespace overlays
+		{
+			struct HiddenMenu
+			{
+				std::string         name;
+				const RE::IMenu*    menu{ nullptr };  // compared only: a reopened menu is the mod's to show
+				bool                reshownLogged{ false };
+			};
+			std::vector<HiddenMenu>  g_menus;
+			std::vector<std::string> g_clips;  // HUD clips hidden (paths)
+			bool                     g_active{ false };
+			std::uint32_t            g_epoch{ 0 };  // a later Hide or Restore makes a waiting Restore stale
+
+			// Where the compass sits in the vanilla HUD and in the usual HUD
+			// replacers; widgets that follow the compass look here.
+			constexpr std::array kCompassPaths{ "_root.HUDMovieBaseInstance.CompassShoutMeterHolder", "_root.HUDMovieBaseInstance.Compass",
+				"_root.HUDMovieBaseInstance.HUDComponent_Compass", "_root.HUDMovieBaseInstance.SkyUI_HUDComponent_Compass",
+				"_root.HUDMovieBaseInstance.compass_mc", "_root.CompassShoutMeterHolder", "_root.Compass" };
+
+			// Sets a HUD clip's visibility; true if it was found.
+			bool SetClipVisible(RE::GFxMovieView* a_movie, const char* a_path, bool a_visible, bool* a_wasVisible = nullptr)
+			{
+				RE::GFxValue clip;
+				RE::GFxValue::DisplayInfo info;
+				if (!a_movie->GetVariable(&clip, a_path) || !clip.IsDisplayObject() || !clip.GetDisplayInfo(&info)) {
+					return false;
+				}
+				if (a_wasVisible) {
+					*a_wasVisible = info.GetVisible();
+				}
+				if (info.GetVisible() != a_visible) {
+					info.SetVisible(a_visible);
+					clip.SetDisplayInfo(info);
+				}
+				return true;
+			}
+
+			RE::GFxMovieView* HudMovie(RE::UI* a_ui)
+			{
+				auto hud = a_ui->GetMenu(RE::HUDMenu::MENU_NAME);
+				return hud ? hud->uiMovie.get() : nullptr;
+			}
+
+			// Hides whatever of the above is showing. a_recheck: a periodic pass,
+			// which only logs widgets that came back.
+			void HideNow(bool a_recheck)
+			{
+				auto* ui = RE::UI::GetSingleton();
+				if (!ui || !g_active) {
+					return;
+				}
+				std::vector<std::string> newlyHidden;
+				for (auto& [name, entry] : ui->menuMap) {
+					const auto& menu = entry.menu;
+					if (!menu || !menu->uiMovie || !menu->uiMovie->GetVisible() ||
+						!charselect::ui::IsOtherModsHudMenu(name.c_str(), menu->menuFlags.all(RE::UI_MENU_FLAGS::kAlwaysOpen))) {
+						continue;
+					}
+					menu->uiMovie->SetVisible(false);
+					auto known = std::ranges::find_if(g_menus, [&](const HiddenMenu& h) { return h.name == name.c_str(); });
+					if (known == g_menus.end()) {
+						g_menus.push_back({ name.c_str(), menu.get() });
+						newlyHidden.emplace_back(name.c_str());
+					} else {
+						known->menu = menu.get();
+						if (std::exchange(known->reshownLogged, true) == false) {
+							logger::debug("Lobby: other mod's HUD menu '{}' showed itself again; hidden again", known->name);
+						}
+					}
+				}
+				if (!newlyHidden.empty()) {
+					std::string names;
+					for (const auto& n : newlyHidden) {
+						names += names.empty() ? n : ", " + n;
+					}
+					logger::info("Lobby: hiding other mods' HUD menus{}: {}", a_recheck ? " that appeared" : "", names);
+				}
+
+				auto* movie = HudMovie(ui);
+				if (!movie) {
+					return;
+				}
+				for (const char* path : kCompassPaths) {
+					bool wasVisible = false;
+					if (SetClipVisible(movie, path, false, &wasVisible) && wasVisible &&
+						std::ranges::find(g_clips, path) == g_clips.end()) {
+						g_clips.emplace_back(path);
+						logger::debug("Lobby: HUD clip {} hidden", path);
+					}
+				}
+			}
+
+			void Restore(std::uint32_t a_epoch, int a_attempt)
+			{
+				if (a_epoch != g_epoch) {
+					return;
+				}
+				auto* ui = RE::UI::GetSingleton();
+				if (!ui) {
+					return;
+				}
+				// During a loading screen widgets would show over it; mods that hide
+				// for loads show themselves again after it, so wait for it to close.
+				if (ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) && a_attempt < 240) {
+					RunAfter(std::chrono::milliseconds(250), [a_epoch, a_attempt]() {
+						QueueUITask([a_epoch, a_attempt]() { Restore(a_epoch, a_attempt + 1); });
+					});
+					return;
+				}
+				int shown = 0;
+				for (const auto& hidden : g_menus) {
+					auto menu = ui->GetMenu(hidden.name);
+					if (menu && menu.get() == hidden.menu && menu->uiMovie && !menu->uiMovie->GetVisible()) {
+						menu->uiMovie->SetVisible(true);
+						++shown;
+					}
+				}
+				if (!g_menus.empty()) {
+					logger::debug("Lobby: {} of {} hidden HUD menus from other mods shown again", shown, g_menus.size());
+				}
+				if (auto* movie = HudMovie(ui)) {
+					for (const auto& path : g_clips) {
+						SetClipVisible(movie, path.c_str(), true);
+					}
+				}
+				g_menus.clear();
+				g_clips.clear();
+			}
+		}
+
+		void HideOverlays()
+		{
+			QueueUITask([]() {
+				++overlays::g_epoch;
+				overlays::g_active = true;
+				overlays::HideNow(false);
+			});
+		}
+
+		// Some widgets show themselves again a moment later (after setting up
+		// once the loading screen closes): caught on the next pass.
+		void KeepOverlaysHidden()
+		{
+			QueueUITask([]() { overlays::HideNow(true); });
+		}
+
+		void RestoreOverlays()
+		{
+			QueueUITask([]() {
+				if (!std::exchange(overlays::g_active, false)) {
+					return;
+				}
+				overlays::Restore(++overlays::g_epoch, 0);
+			});
 		}
 
 		void LogPlayer(std::string_view a_when)
@@ -957,6 +1121,7 @@ namespace charselect::lobby
 				return;
 			}
 			HideOtherActors();
+			KeepOverlaysHidden();
 			RunAfter(kKeepClearInterval, [a_generation]() { KeepCellClear(a_generation); });
 		}
 
@@ -1307,6 +1472,7 @@ namespace charselect::lobby
 			HideOtherActors();
 			ApplyTimeAndWeather();
 			SetHudVisible(false);
+			HideOverlays();
 			g_stage.spawn = a_player->GetPosition();
 			g_stage.spawnYaw = a_player->GetAngleZ();
 			ComputeLayout(cell);
@@ -1437,6 +1603,7 @@ namespace charselect::lobby
 			SetState(State::kActive);
 			BlockSaving(true);
 			SetHudVisible(false);
+			HideOverlays();
 			RelinkSeats();  // unlinked for the load (LoadFile)
 			for (std::size_t i = 0; i < g_slots.size(); ++i) {
 				if (g_slots[i].view.ready) {
@@ -2134,6 +2301,7 @@ namespace charselect::lobby
 		if (g_hudHidden) {
 			SetHudVisible(true);
 		}
+		RestoreOverlays();
 	}
 
 	void OnPreLoadGame()

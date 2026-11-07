@@ -195,10 +195,9 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
 	const auto plugin = SKSE::PluginDeclaration::GetSingleton();
 	const auto name = plugin->GetName();
-	const auto version = plugin->GetVersion();
-
 	InitializeLog(name);
-	logger::info("{} v{} loading", name, version.string("."sv));
+	// The version plus the beta number of a test build (CMakeLists).
+	logger::info("{} v{} loading", name, CHARSELECT_DISPLAY_VERSION);
 
 	// Skyrim VR (1.4.x) isn't supported: it's built without it, and would
 	// fail later on an Address Library lookup with a misleading error.
