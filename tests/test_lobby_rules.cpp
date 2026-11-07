@@ -288,3 +288,37 @@ TEST_CASE("bReplaceAtStartup = 0 keeps only the startup main menu", "[lobby][fro
 	ctx.startupMenu = true;
 	CHECK(ShouldReplaceMainMenu(ctx));  // the default replaces both
 }
+
+TEST_CASE("The camera is put back in first person only when it shows the player from outside", "[lobby][camera]")
+{
+	CHECK_FALSE(ShouldForceFirstPerson(true, 0.0f));
+	CHECK_FALSE(ShouldForceFirstPerson(true, 300.0f));
+	CHECK(ShouldForceFirstPerson(false, 300.0f));                 // third person, behind the player
+	CHECK_FALSE(ShouldForceFirstPerson(false, 10.0f));            // another mod's first person, at the head
+	CHECK_FALSE(ShouldForceFirstPerson(false, kAtHeadDistance));  // the edge counts as at the head
+}
+
+TEST_CASE("Putting the camera back stops when another mod keeps switching it away", "[lobby][camera]")
+{
+	using Clock = CameraFixLimiter::Clock;
+	const auto t0 = Clock::time_point{} + 1h;
+	CameraFixLimiter limiter;
+	SECTION("now and then is fine")
+	{
+		for (int i = 0; i < 20; ++i) {
+			CHECK(limiter.Allow(t0 + i * 4s));
+		}
+		CHECK_FALSE(limiter.GaveUp());
+	}
+	SECTION("over five in three seconds gives up for good")
+	{
+		for (int i = 0; i < CameraFixLimiter::kMaxFixes; ++i) {
+			CHECK(limiter.Allow(t0 + i * 100ms));
+		}
+		CHECK_FALSE(limiter.Allow(t0 + 600ms));
+		CHECK(limiter.GaveUp());
+		CHECK_FALSE(limiter.Allow(t0 + 1h));
+		limiter.Reset();
+		CHECK(limiter.Allow(t0 + 1h));
+	}
+}

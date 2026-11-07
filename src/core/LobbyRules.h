@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <deque>
 #include <optional>
 #include <string_view>
 
@@ -110,4 +111,30 @@ namespace charselect::lobby::rules
 	// The main menu opening becomes the select screen. (F7 opens it whatever
 	// these say.)
 	[[nodiscard]] bool ShouldReplaceMainMenu(const MainMenuContext& a_ctx);
+
+	// The lobby is seen through its player's eyes. A camera out of first
+	// person is put back only when it's away from the player's head, showing
+	// them from outside; a third-person camera at the head is another mod's
+	// first person (Body In First Person), and is left alone.
+	inline constexpr float kAtHeadDistance = 60.0f;  // game units
+	[[nodiscard]] bool ShouldForceFirstPerson(bool a_firstPerson, float a_cameraToHead);
+
+	// Putting the camera back, until another mod keeps switching it away:
+	// more than kMaxFixes within kWindow, and the lobby stops fighting it.
+	class CameraFixLimiter
+	{
+	public:
+		using Clock = std::chrono::steady_clock;
+		static constexpr int  kMaxFixes = 5;
+		static constexpr auto kWindow = std::chrono::seconds(3);
+
+		// A fix about to be made: false once this has given up.
+		[[nodiscard]] bool Allow(Clock::time_point a_now);
+		[[nodiscard]] bool GaveUp() const { return _gaveUp; }
+		void               Reset() { *this = {}; }
+
+	private:
+		std::deque<Clock::time_point> _recent;
+		bool                          _gaveUp{ false };
+	};
 }

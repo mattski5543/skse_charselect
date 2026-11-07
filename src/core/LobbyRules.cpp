@@ -104,3 +104,27 @@ namespace charselect::lobby::rules
 		       a_ctx.state == State::kIdle && !a_ctx.loadFailedRecently && a_ctx.menuAvailable;
 	}
 }
+
+namespace charselect::lobby::rules
+{
+	bool ShouldForceFirstPerson(bool a_firstPerson, float a_cameraToHead)
+	{
+		return !a_firstPerson && a_cameraToHead > kAtHeadDistance;
+	}
+
+	bool CameraFixLimiter::Allow(Clock::time_point a_now)
+	{
+		if (_gaveUp) {
+			return false;
+		}
+		while (!_recent.empty() && a_now - _recent.front() > kWindow) {
+			_recent.pop_front();
+		}
+		if (static_cast<int>(_recent.size()) >= kMaxFixes) {
+			_gaveUp = true;
+			return false;
+		}
+		_recent.push_back(a_now);
+		return true;
+	}
+}

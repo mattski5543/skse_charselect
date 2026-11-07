@@ -1125,24 +1125,37 @@ namespace charselect::lobby
 			return main && main->GetRuntimeData().resetGame;
 		}
 
-		std::uint32_t g_cameraFixes{ 0 };  // this lobby: times first person was put back
+		std::uint32_t           g_cameraFixes{ 0 };  // this lobby: times first person was put back
+		rules::CameraFixLimiter g_cameraLimiter;
 
 		// The lobby is seen through its player's eyes (PlacePlayer). Mods that
 		// switch to third person, such as Immersive Equipping Animations when
 		// something equips the lobby's player at startup, would show that player
-		// from behind instead, so first person is put back.
+		// from behind instead, so first person is put back; but not a camera
+		// at the player's head (another mod's first person), and not against a
+		// mod that keeps switching it away (they'd fight every frame).
 		void KeepFirstPerson()
 		{
 			auto* camera = RE::PlayerCamera::GetSingleton();
-			if (!camera || camera->IsInFirstPerson()) {
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (!camera || !player || g_cameraLimiter.GaveUp() || camera->IsInFirstPerson()) {
+				return;
+			}
+			const float toHead = camera->cameraRoot ? camera->cameraRoot->world.translate.GetDistance(player->GetLookingAtLocation())
+			                                        : (std::numeric_limits<float>::max)();
+			if (!rules::ShouldForceFirstPerson(false, toHead)) {
 				return;
 			}
 			const int state = camera->currentState ? static_cast<int>(camera->currentState->id) : -1;
+			if (!g_cameraLimiter.Allow(std::chrono::steady_clock::now())) {
+				logger::warn("Lobby: another mod keeps taking the camera out of first person (camera state {}); leaving it to that mod", state);
+				return;
+			}
 			camera->ForceFirstPerson();
 			if (++g_cameraFixes == 1) {
-				logger::info("Lobby: something took the camera out of first person (camera state {}); put back", state);
+				logger::info("Lobby: something took the camera out of first person (camera state {}, {:.0f} units from the head); put back", state, toHead);
 			} else if (g_cameraFixes <= 5) {
-				logger::debug("Lobby: camera out of first person again (camera state {}); put back", state);
+				logger::debug("Lobby: camera out of first person again (camera state {}, {:.0f} units from the head); put back", state, toHead);
 			}
 		}
 
@@ -1536,6 +1549,7 @@ namespace charselect::lobby
 			SetState(State::kActive);
 			BlockSaving(true);
 			g_cameraFixes = 0;
+			g_cameraLimiter.Reset();
 			LogPlayer("at staging");
 			HideOtherActors();
 			ApplyTimeAndWeather();
