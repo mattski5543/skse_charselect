@@ -58,6 +58,8 @@ TEST_CASE("The shipped CharSelect.ini parses cleanly and matches the built-in de
 	// the code agree on every default.
 	const Settings d;
 	CHECK(s.replaceMainMenu == d.replaceMainMenu);
+	CHECK(s.replaceAtStartup == d.replaceAtStartup);
+	CHECK(s.lobbyOnLoad == d.lobbyOnLoad);
 	CHECK(s.lobbyHotkey == d.lobbyHotkey);
 	CHECK(s.debugLog == d.debugLog);
 	CHECK(s.lobbyCell == d.lobbyCell);
@@ -222,4 +224,13 @@ TEST_CASE("bLobbyOnLoad", "[config]")
 	CHECK_FALSE(Settings{}.lobbyOnLoad);
 	CHECK(ParseText("[General]\nbLobbyOnLoad = 1\n").lobbyOnLoad);
 	CHECK_FALSE(ParseText("[General]\nbLobbyOnLoad = 0\n").lobbyOnLoad);
+}
+
+TEST_CASE("Numbers: hex hotkeys, no octal, no wrapped negatives", "[config]")
+{
+	CHECK(ParseText("[General]\niLobbyHotkey = 0x42\n").lobbyHotkey == 0x42);
+	CHECK(ParseText("[General]\niLobbyHotkey = 65\n").lobbyHotkey == 65);
+	CHECK(ParseText("[General]\niLobbyHotkey = 065\n").lobbyHotkey == 65);
+	CHECK(ParseText("[Lobby]\niMaxCharacters = -3\n").maxCharacters == 1);
+	CHECK(ParseText("[Lobby]\niMaxCharacters = 20\n").maxCharacters == 9);
 }

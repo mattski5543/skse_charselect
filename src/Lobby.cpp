@@ -92,7 +92,7 @@ namespace charselect::lobby
 		bool              g_loadingWhileActive{ false };  // a loading screen opened with the select screen up
 		std::atomic<bool> g_revealed{ false };
 		bool              g_revealScheduled{ false };
-		bool              g_hudHidden{ false };
+		bool              g_hudHidden{ false };  // UI thread only (SetHudVisible)
 		bool              g_savingBlocked{ false };  // we set the player's disable-saving flag
 		std::atomic<bool> g_editorOpen{ false };  // the layout editor panel (F8) is up
 		bool              g_cameraEdited{ false };   // moved in the editor panel since the last save
@@ -105,7 +105,7 @@ namespace charselect::lobby
 		RE::TESObjectLIGH*  g_lightBase{ nullptr };
 		RE::ObjectRefHandle g_light;
 		std::size_t         g_highlighted{ 0 };
-		std::uint32_t     g_enterGeneration{ 0 };  // invalidates stale delayed callbacks
+		std::atomic<std::uint32_t> g_enterGeneration{ 0 };  // invalidates stale delayed callbacks; read by CocCurrent outside the lock
 
 		std::function<void(std::string_view, bool)> g_onFailure;
 		std::function<void()>                 g_onReady;
@@ -210,15 +210,22 @@ namespace charselect::lobby
 			}
 		}
 
+		// The game's HUD, on the UI thread (Scaleform isn't thread-safe), where
+		// g_hudHidden is only used. Shown again only if hidden here.
 		void SetHudVisible(bool a_visible)
 		{
-			auto* ui = RE::UI::GetSingleton();
-			auto  hud = ui ? ui->GetMenu(RE::HUDMenu::MENU_NAME) : nullptr;
-			if (hud && hud->uiMovie) {
-				hud->uiMovie->SetVisible(a_visible);
-				g_hudHidden = !a_visible;
-				logger::debug("Lobby: HUD {}", a_visible ? "shown" : "hidden");
-			}
+			QueueUITask([a_visible]() {
+				if (a_visible && !g_hudHidden) {
+					return;
+				}
+				auto* ui = RE::UI::GetSingleton();
+				auto  hud = ui ? ui->GetMenu(RE::HUDMenu::MENU_NAME) : nullptr;
+				if (hud && hud->uiMovie) {
+					hud->uiMovie->SetVisible(a_visible);
+					g_hudHidden = !a_visible;
+					logger::debug("Lobby: HUD {}", a_visible ? "shown" : "hidden");
+				}
+			});
 		}
 
 		// Other mods' HUD widgets, hidden with the game's HUD. Widgets drawn as
@@ -331,8 +338,11 @@ namespace charselect::lobby
 				}
 				// During a loading screen widgets would show over it; mods that hide
 				// for loads show themselves again after it, so wait for it to close.
-				if (ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) && a_attempt < 240) {
-					RunAfter(std::chrono::milliseconds(250), [a_epoch, a_attempt]() {
+				// The limit is only a backstop: loads on big setups can take minutes.
+				constexpr auto kPoll = std::chrono::milliseconds(250);
+				constexpr int  kMaxPolls = 10 * 60 * 4;  // ten minutes
+				if (ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) && a_attempt < kMaxPolls) {
+					RunAfter(kPoll, [a_epoch, a_attempt]() {
 						QueueUITask([a_epoch, a_attempt]() { Restore(a_epoch, a_attempt + 1); });
 					});
 					return;
@@ -740,7 +750,7 @@ namespace charselect::lobby
 		void PlaceLightSoon(std::size_t a_index)
 		{
 			const auto ticket = ++g_lightTicket;
-			const auto generation = g_enterGeneration;
+			const auto generation = g_enterGeneration.load();
 			RunAfter(std::chrono::milliseconds(200), [ticket, generation, a_index]() {
 				if (ticket == g_lightTicket && generation == g_enterGeneration && g_state == State::kActive) {
 					PlaceLight(a_index);
@@ -784,7 +794,7 @@ namespace charselect::lobby
 			}
 			for (std::size_t i = 0; i < g_slots.size(); ++i) {
 				if (g_slots[i].view.ready && !poses::IsSettled(i)) {
-					const auto generation = g_enterGeneration;
+					const auto generation = g_enterGeneration.load();
 					RunAfter(kReadyPollInterval, [generation]() {
 						if (generation == g_enterGeneration) {
 							MaybeReveal();
@@ -794,7 +804,7 @@ namespace charselect::lobby
 				}
 			}
 			g_revealScheduled = true;
-			const auto generation = g_enterGeneration;
+			const auto generation = g_enterGeneration.load();
 			RunAfter(kRevealSettle, [generation]() {
 				if (generation == g_enterGeneration) {
 					Reveal("all characters in place");
@@ -1001,7 +1011,7 @@ namespace charselect::lobby
 			logger::debug("Lobby: slot {} '{}' placed as {:08X} (base {:08X}) at ({:.0f}, {:.0f}, {:.0f}){}", a_index + 1, slot.data.name,
 				actor->GetFormID(), slot.npc->GetFormID(), slot.pos.x, slot.pos.y, slot.pos.z, slot.placeholder ? " as a hooded stand-in" : "");
 
-			const auto generation = g_enterGeneration;
+			const auto generation = g_enterGeneration.load();
 			if (slot.placeholder) {
 				// No preset to apply: the copied base already has a whole head.
 				// Enabled a moment later, not now: enabling in the same frame as
@@ -1031,10 +1041,6 @@ namespace charselect::lobby
 			return std::ranges::any_of(g_slots, [a_ref](const Slot& s) { return s.view.ref.get().get() == a_ref; });
 		}
 
-		// Hides the cell's own NPCs. NPCs keep their schedules in the lobby
-		// game, so anyone walking in later has to be hidden too: at once when
-		// their 3D loads (OnObjectLoaded), and by a sweep
-		// every half second for anyone that misses.
 		// Outdoors the game keeps several cells loaded around the player, so
 		// "the lobby" is everything within this distance instead of one cell.
 		constexpr float kOutdoorRadius = 4000.0f;
@@ -1076,6 +1082,10 @@ namespace charselect::lobby
 			return a_ref->GetPosition().GetDistance(player->GetPosition()) <= kOutdoorRadius;
 		}
 
+		// Hides the lobby's own NPCs. They keep their schedules in the lobby's
+		// game, so anyone walking in later has to be hidden too: at once when
+		// their 3D loads (OnObjectLoaded), and by the slow sweep for anyone
+		// that misses.
 		std::size_t HideOtherActors()
 		{
 			std::size_t hidden = 0;
@@ -1136,18 +1146,25 @@ namespace charselect::lobby
 			}
 		}
 
-		void FastSweep(std::uint32_t a_generation)
+		// Each StartSweeps makes the sweeps already running stale, so a lobby
+		// resumed after a cancelled load has one pair, not one more each time.
+		std::uint32_t g_sweepTicket{ 0 };
+
+		void FastSweep(std::uint32_t a_ticket)
 		{
-			if (a_generation != g_enterGeneration || g_state != State::kActive) {
+			if (a_ticket != g_sweepTicket || g_state != State::kActive) {
 				return;
 			}
+			if (GameResetting()) {
+				return;  // the slow sweep ends the lobby
+			}
 			KeepFirstPerson();
-			RunAfter(kFastSweepInterval, [a_generation]() { FastSweep(a_generation); });
+			RunAfter(kFastSweepInterval, [a_ticket]() { FastSweep(a_ticket); });
 		}
 
-		void SlowSweep(std::uint32_t a_generation)
+		void SlowSweep(std::uint32_t a_ticket)
 		{
-			if (a_generation != g_enterGeneration || g_state != State::kActive) {
+			if (a_ticket != g_sweepTicket || g_state != State::kActive) {
 				return;
 			}
 			if (GameResetting()) {
@@ -1156,14 +1173,15 @@ namespace charselect::lobby
 			}
 			HideOtherActors();
 			KeepOverlaysHidden();
-			RunAfter(kSlowSweepInterval, [a_generation]() { SlowSweep(a_generation); });
+			RunAfter(kSlowSweepInterval, [a_ticket]() { SlowSweep(a_ticket); });
 		}
 
-		// Both stop by themselves once the lobby isn't active or a new one starts.
-		void StartSweeps(std::uint32_t a_generation)
+		// Both stop by themselves once the lobby isn't active.
+		void StartSweeps()
 		{
-			RunAfter(kFastSweepInterval, [a_generation]() { FastSweep(a_generation); });
-			RunAfter(kSlowSweepInterval, [a_generation]() { SlowSweep(a_generation); });
+			const auto ticket = ++g_sweepTicket;
+			RunAfter(kFastSweepInterval, [ticket]() { FastSweep(ticket); });
+			RunAfter(kSlowSweepInterval, [ticket]() { SlowSweep(ticket); });
 		}
 
 		// Layouts are stored under the location the lobby was started in
@@ -1437,7 +1455,7 @@ namespace charselect::lobby
 			g_spawnScheduled = false;
 			g_loadingScreenSeen = false;
 			const auto ticket = ++g_cocTicket;
-			const auto generation = g_enterGeneration;
+			const auto generation = g_enterGeneration.load();
 			// Outside GameLock: coc loads the cell before it returns, and the
 			// menu events and tasks of that load take the lock on other threads.
 			QueueTaskUnlocked([command = std::format("coc {}", a_cell), ticket, generation]() {
@@ -1526,7 +1544,7 @@ namespace charselect::lobby
 					SpawnSlot(i, a_player);
 				}
 			}
-			const auto generation = g_enterGeneration;
+			const auto generation = g_enterGeneration.load();
 			RunAfter(kRevealTimeout, [generation]() {
 				if (generation == g_enterGeneration && !g_revealed && g_state == State::kActive) {
 					logger::warn("Lobby: reveal timeout, showing the menu with unfinished slots");
@@ -1536,7 +1554,7 @@ namespace charselect::lobby
 					Reveal("reveal timeout");
 				}
 			});
-			StartSweeps(generation);
+			StartSweeps();
 			RunAfter(std::chrono::seconds(5), [generation]() {
 				if (generation == g_enterGeneration && g_state == State::kActive) {
 					ReportSlots("5s after staging");
@@ -1646,7 +1664,15 @@ namespace charselect::lobby
 			BlockSaving(true);
 			SetHudVisible(false);
 			HideOverlays();
-			RelinkSeats();  // unlinked for the load (LoadFile)
+			// Unlinked for the load (LoadFile, or the Journal's load list). Not
+			// while the Journal is still up (the missing-content prompt): a load
+			// confirmed there would free the world with the links in place, and
+			// by its PreLoadGame they can't be undone. OnJournalClosed links them.
+			auto* ui = RE::UI::GetSingleton();
+			const bool journalOpen = ui && ui->IsMenuOpen(RE::JournalMenu::MENU_NAME);
+			if (!journalOpen) {
+				RelinkSeats();
+			}
 			for (std::size_t i = 0; i < g_slots.size(); ++i) {
 				if (g_slots[i].view.ready) {
 					ConfigurePoses(i);
@@ -1655,28 +1681,31 @@ namespace charselect::lobby
 			}
 			poses::Select(g_highlighted);
 			PlaceLight(g_highlighted);
-			StartSweeps(g_enterGeneration);
+			StartSweeps();
 			// The select screen again (out of the fade to black after PLAY); after
 			// a LOAD, once the Journal closes (OnJournalClosed).
-			auto* ui = RE::UI::GetSingleton();
-			if (!(ui && ui->IsMenuOpen(RE::JournalMenu::MENU_NAME)) && g_onReady) {
+			if (!journalOpen && g_onReady) {
 				g_onReady();
 			}
 		}
 
+		// Each PLAY gets its own ticket, so a watchdog left from an earlier one
+		// (a fast failure, then PLAY again) can't resume the lobby under it.
+		std::uint32_t g_loadTicket{ 0 };
+
 		// Checks a PLAY load has started. A message box (a mod's, or any prompt
 		// waiting on the player; PLAY itself skips the missing-content prompt)
 		// or the loading screen being up means it's still under way: look again.
-		void WatchLoadStart(std::uint32_t a_generation)
+		void WatchLoadStart(std::uint32_t a_ticket)
 		{
-			RunAfter(kLoadStartTimeout, [a_generation]() {
+			RunAfter(kLoadStartTimeout, [a_ticket]() {
 				auto*      ui = RE::UI::GetSingleton();
 				const bool waiting = ui && (ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME) || ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME));
-				switch (rules::CheckLoadStart(a_generation == g_enterGeneration, g_state, g_loadStarted, waiting)) {
+				switch (rules::CheckLoadStart(a_ticket == g_loadTicket, g_state, g_loadStarted, waiting)) {
 				case rules::LoadWatch::kStop:
 					return;
 				case rules::LoadWatch::kRecheck:
-					WatchLoadStart(a_generation);
+					WatchLoadStart(a_ticket);
 					return;
 				case rules::LoadWatch::kResume:
 					logger::warn("Lobby: the load never started; back to the select screen");
@@ -1708,12 +1737,12 @@ namespace charselect::lobby
 
 			// A load that never starts would leave the screen black (the select
 			// menu stays up, black, until the loading screen): come back instead.
-			WatchLoadStart(g_enterGeneration);
+			WatchLoadStart(++g_loadTicket);
 
-			auto load = [file = std::move(a_file), generation = g_enterGeneration]() {
+			auto load = [file = std::move(a_file), generation = g_enterGeneration.load(), ticket = g_loadTicket]() {
 				// ClearPresets is a Papyrus round trip: by now the watchdog may
 				// have resumed the lobby, or another PLAY may have started.
-				if (generation != g_enterGeneration || g_state != State::kLoadingSave) {
+				if (generation != g_enterGeneration || ticket != g_loadTicket || g_state != State::kLoadingSave) {
 					logger::info("Lobby: not loading {}: the lobby moved on while RaceMenu cleared its presets", file);
 					return;
 				}
@@ -1813,6 +1842,7 @@ namespace charselect::lobby
 		g_lightBase = nullptr;
 		g_highlighted = 0;
 		g_stage = {};
+		g_cameraEdited = false;
 		poses::Reset(true);
 
 		SetState(State::kEntering);
@@ -1852,7 +1882,7 @@ namespace charselect::lobby
 			return;
 		}
 		g_spawnScheduled = true;
-		const auto generation = g_enterGeneration;
+		const auto generation = g_enterGeneration.load();
 		RunAfter(kSettleDelay, [generation]() { TrySpawn(generation, 0); });
 	}
 
@@ -1984,7 +2014,7 @@ namespace charselect::lobby
 						actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, slot.heading });
 					}
 					const auto token = ++slot.reseat;
-					const auto generation = g_enterGeneration;
+					const auto generation = g_enterGeneration.load();
 					RunAfter(kReseatDelay, [generation, a_index, token]() {
 						if (generation == g_enterGeneration && g_state == State::kActive && a_index < g_slots.size() &&
 							g_slots[a_index].reseat == token && g_slots[a_index].view.ready) {
@@ -2071,7 +2101,7 @@ namespace charselect::lobby
 				actor->SetPosition(slot.pos, true);
 				actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, slot.heading });
 				const auto token = ++slot.reseat;
-				const auto generation = g_enterGeneration;
+				const auto generation = g_enterGeneration.load();
 				RunAfter(kReseatDelay, [generation, a_index, token]() {
 					if (generation == g_enterGeneration && g_state == State::kActive && a_index < g_slots.size() && g_slots[a_index].reseat == token &&
 						g_slots[a_index].view.ready) {
@@ -2251,6 +2281,11 @@ namespace charselect::lobby
 		}
 	}
 
+	std::size_t HighlightedSlot()
+	{
+		return g_highlighted;
+	}
+
 	bool ShouldDismissMessageBoxes()
 	{
 		return rules::ShouldDismissMessageBoxes(g_state, g_revealed);
@@ -2317,7 +2352,9 @@ namespace charselect::lobby
 
 	void OnLoadListOpened()
 	{
-		g_loadListCapture = resetguard::Capture("load list");
+		// Opened again before the last close was handled: that capture is still
+		// the load list's to drop.
+		g_loadListCapture = resetguard::Capture("load list") || g_loadListCapture;
 		g_loadSinceLoadList = false;
 	}
 
@@ -2339,9 +2376,7 @@ namespace charselect::lobby
 				logger::debug("Lobby: forced weather released");
 			}
 		}
-		if (g_hudHidden) {
-			SetHudVisible(true);
-		}
+		SetHudVisible(true);
 		RestoreOverlays();
 	}
 
@@ -2417,10 +2452,13 @@ namespace charselect::lobby
 		// starting as the Journal closes, or a quit to the main menu, so look
 		// again in a moment.
 		if (g_state == State::kActive) {
-			const auto generation = g_enterGeneration;
+			const auto generation = g_enterGeneration.load();
 			RunAfter(std::chrono::milliseconds(750), [generation]() {
+				// Not if the load list was opened again meanwhile (still unlinked
+				// for it, and its own close looks again).
 				auto* ui = RE::UI::GetSingleton();
-				if (generation != g_enterGeneration || g_state != State::kActive || (ui && ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME))) {
+				if (generation != g_enterGeneration || g_state != State::kActive ||
+					(ui && (ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) || ui->IsMenuOpen(RE::JournalMenu::MENU_NAME)))) {
 					return;
 				}
 				if (GameResetting()) {

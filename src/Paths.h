@@ -20,7 +20,8 @@ namespace charselect::paths
 	std::filesystem::path PresetPath(std::uint32_t a_characterId);
 
 	// A path for the log, UTF-8, without the Windows user name: under My
-	// Games it starts "<My Games>\", under the game folder "<Skyrim>\".
+	// Games it starts "<My Games\Skyrim Special Edition>\", under the game
+	// folder "<Skyrim>\".
 	// Players paste their logs in public.
 	std::string ForLog(const std::filesystem::path& a_path);
 }

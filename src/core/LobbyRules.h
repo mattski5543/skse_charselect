@@ -74,8 +74,9 @@ namespace charselect::lobby::rules
 		kRecheck,  // a prompt or the loading screen is up: still under way
 		kResume,   // nothing happened: back to the select screen
 	};
-	// The watchdog after PLAY, a_timeout after the load was requested.
-	[[nodiscard]] LoadWatch CheckLoadStart(bool a_sameGeneration, State a_state, bool a_loadStarted, bool a_promptOrLoadingOpen);
+	// The watchdog after PLAY, a_timeout after the load was requested
+	// (a_sameLoad: no other PLAY since).
+	[[nodiscard]] LoadWatch CheckLoadStart(bool a_sameLoad, State a_state, bool a_loadStarted, bool a_promptOrLoadingOpen);
 
 	// Remembers when the last load from the lobby started. A main menu soon
 	// after means the game gave up on it, and re-entering the lobby from

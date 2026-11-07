@@ -1,7 +1,8 @@
 // The installer (fomod/) agrees with the shipped files: every location in
 // locations.txt and every main menu choice in mainmenu.txt is offered by
-// ModuleConfig.xml, every pair of them installs its own CharSelect.ini, every
-// location has a built-in layout, and the first of each is the shipped default.
+// ModuleConfig.xml, which installs Locations\<location>\<choice> for every pair
+// of them, every location has a built-in layout, and the first of each is the
+// shipped default. (What StageFomod writes into those folders isn't run here.)
 
 #include <catch2/catch_test_macros.hpp>
 

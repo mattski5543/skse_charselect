@@ -1,6 +1,6 @@
 # The installer's location choices: <folder>=<cell editor ID>, one per line.
 # The packaging step (cmake/StageFomod.cmake) writes a CharSelect.ini for each,
-# under Locations\<folder>, that differs from the shipped one only in sLobbyCell.
+# once per main menu choice (mainmenu.txt), under Locations\<folder>\<choice>.
 # ModuleConfig.xml must list the same folders; the tests check both, and that
 # every cell has a layout in CharSelectLayouts.ini. The first is the default
 # (and the shipped CharSelect.ini's sLobbyCell).

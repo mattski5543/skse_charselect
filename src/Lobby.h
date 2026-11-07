@@ -73,6 +73,7 @@ namespace charselect::lobby
 	void Play(std::size_t a_slot);  // latest save
 	void Summon();                                           // re-run the layout
 	void Highlight(std::size_t a_slot);                      // move the light to this character
+	[[nodiscard]] std::size_t HighlightedSlot();             // the character the light is on
 
 	// Layout editor panel (F8): pick the camera or a character and move it
 	// with on-screen arrows; only what was changed is saved to Layout.ini.

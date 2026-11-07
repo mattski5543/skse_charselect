@@ -19,6 +19,7 @@ namespace charselect::frontend
 		bool   g_viaHotkey{ false };         // this visit's lobby was asked for with the hotkey
 		bool   g_covered{ false };           // CoverMainMenu hid it for the lobby this visit
 		bool   g_startupMenu{ true };        // the main menu the game started on, until it first closes
+		bool   g_lobbyFailedThisVisit{ false };  // the lobby failed: Load (bLobbyOnLoad) is the game's until the menu closes
 		std::string g_failureMessage;        // a lobby that failed in its own game: shown at the main menu
 
 		std::optional<std::chrono::steady_clock::time_point> g_mainMenuOpenedAt;  // until the lobby shows
@@ -54,7 +55,8 @@ namespace charselect::frontend
 			return ui ? ui->GetMenu(RE::MainMenu::MENU_NAME) : nullptr;
 		}
 
-		void SetVanillaVisible(bool a_visible)
+		// UI thread (Scaleform isn't thread-safe): menu events, UI tasks.
+		void SetVanillaVisibleNow(bool a_visible)
 		{
 			auto menu = MainMenu();
 			if (menu && menu->uiMovie) {
@@ -63,31 +65,32 @@ namespace charselect::frontend
 			}
 		}
 
+		// From anywhere else.
+		void SetVanillaVisible(bool a_visible)
+		{
+			QueueUITask([a_visible]() { SetVanillaVisibleNow(a_visible); });
+		}
+
 		// Calls the main menu callback whose name contains any of a_keywords
 		// (case-insensitive; a_exact: is one of them), as if its button had been
-		// pressed. UI thread.
-		bool InvokeMainMenuCallback(std::initializer_list<std::string_view> a_keywords, bool a_exact = false)
+		// pressed. False if there's no such callback. UI thread, with the main
+		// menu up.
+		bool InvokeMainMenuCallback(const RE::IMenu& a_menu, std::initializer_list<std::string_view> a_keywords, bool a_exact = false)
 		{
-			auto menu = MainMenu();
-			if (!menu || !menu->fxDelegate || !menu->uiMovie) {
-				logger::error("Frontend: main menu not available for callback");
-				return false;
-			}
 			for (const auto keyword : a_keywords) {
 				const auto key = text::Lower(keyword);
-				for (auto& entry : menu->fxDelegate->callbacks) {
+				for (auto& entry : a_menu.fxDelegate->callbacks) {
 					const std::string name = entry.first.c_str();
 					const auto lower = text::Lower(name);
 					if ((a_exact ? lower != key : lower.find(key) == std::string::npos) || !entry.second.callback) {
 						continue;
 					}
 					logger::debug("Frontend: invoking main menu callback '{}' (matched '{}')", name, keyword);
-					RE::FxDelegateArgs args(RE::GFxValue(), entry.second.handler.get(), menu->uiMovie.get(), nullptr, 0);
+					RE::FxDelegateArgs args(RE::GFxValue(), entry.second.handler.get(), a_menu.uiMovie.get(), nullptr, 0);
 					entry.second.callback(args);
 					return true;
 				}
 			}
-			logger::warn("Frontend: no main menu callback matches any keyword");
 			return false;
 		}
 
@@ -95,15 +98,23 @@ namespace charselect::frontend
 		// the game for the save list (PopulateCharacterList) before showing it,
 		// whatever the menu looks like, so that callback is swapped for one that
 		// opens the lobby instead, on each main menu that opens. When the lobby
-		// can't open, the game's own runs and Load works as normal.
+		// can't open, or failed this visit, the game's own runs and Load works
+		// as normal.
+		//
+		// The swap changes one function pointer in the open main menu's own
+		// callback table, on the UI thread its buttons run on; the table goes
+		// with that menu. The saved original is code (the game's, or another
+		// mod's), so it stays valid for later menus, and a menu already swapped
+		// isn't swapped again.
 		RE::FxDelegateHandler::CallbackFn* g_populateCharacterList{ nullptr };
 
 		void OnLoadPressed(const RE::FxDelegateArgs& a_args)
 		{
 			bool toLobby = false;
 			Guarded("Load button", [&]() {
-				toLobby = g_atMainMenu && g_raceMenu && !SelectMenu::MovieFailed() && lobby::GetState() == lobby::State::kIdle &&
-				          !lobby::LoadFailedRecently();
+				std::scoped_lock lock(GameLock());  // the frontend's and lobby's state
+				toLobby = g_atMainMenu && !g_lobbyFailedThisVisit && g_raceMenu && !SelectMenu::MovieFailed() &&
+				          lobby::GetState() == lobby::State::kIdle && !lobby::LoadFailedRecently();
 				if (toLobby) {
 					logger::info("Frontend: Load pressed on the main menu; opening the lobby (bLobbyOnLoad)");
 					QueueTask([]() { EnterFromHotkey(); });
@@ -146,12 +157,18 @@ namespace charselect::frontend
 			// (Start Game Settings' new game options) get their turn. Straight
 			// to starting the game only if the menu has no NEW.
 			QueueUITask([]() {
-				if (InvokeMainMenuCallback({ "new" }, true)) {
+				auto menu = MainMenu();
+				if (!menu || !menu->fxDelegate || !menu->uiMovie) {
+					logger::error("Frontend: no main menu to start a new game from");
+					RE::DebugMessageBox("CharSelect: Could not start a new game. Use the main menu instead.");
+					return;
+				}
+				if (InvokeMainMenuCallback(*menu, { "new" }, true)) {
 					return;
 				}
 				logger::warn("Frontend: the main menu has no NEW callback; starting the new game directly");
-				if (!InvokeMainMenuCallback({ "startnewgame" })) {
-					logger::error("Frontend: no main menu callback to start a new game");
+				if (!InvokeMainMenuCallback(*menu, { "startnewgame" })) {
+					logger::error("Frontend: the main menu has no callback to start a new game");
 					RE::DebugMessageBox("CharSelect: Could not start a new game. Use the main menu instead.");
 				}
 			});
@@ -173,6 +190,7 @@ namespace charselect::frontend
 			SelectMenu::Hide();
 			if (g_atMainMenu) {
 				g_classicThisVisit = true;
+				g_lobbyFailedThisVisit = true;
 				SetVanillaVisible(true);
 				if (a_nothingToShow && !g_viaHotkey) {
 					// A new player's first launch: just the vanilla menu, no message.
@@ -273,7 +291,7 @@ namespace charselect::frontend
 		}
 		auto menu = MainMenu();
 		logger::debug("Frontend: covering the vanilla main menu as it opens (movie {})", menu && menu->uiMovie ? "hidden" : "not loaded yet");
-		SetVanillaVisible(false);
+		SetVanillaVisibleNow(false);  // the menu event: already the UI thread
 		SelectMenu::ShowSplash("Loading");
 	}
 
@@ -303,6 +321,7 @@ namespace charselect::frontend
 				SelectMenu::Hide();  // still black from the fade, if it survived the reset
 				SetVanillaVisible(true);
 				if (const auto message = std::exchange(g_failureMessage, {}); !message.empty()) {
+					g_lobbyFailedThisVisit = true;
 					RE::DebugMessageBox(message.c_str());
 				}
 				PerformPending(action);
@@ -328,6 +347,7 @@ namespace charselect::frontend
 				logger::warn("Frontend: back at the main menu after a failed load from the lobby; showing the vanilla menu");
 				lobby::ClearLoadFailure();
 				g_classicThisVisit = true;
+				g_lobbyFailedThisVisit = true;
 				SelectMenu::Hide();
 				SetVanillaVisible(true);
 				const auto key = config::Get().lobbyHotkey == 0x41 ? std::string("F7") : std::string("the CharSelect hotkey (iLobbyHotkey)");
@@ -344,6 +364,7 @@ namespace charselect::frontend
 	{
 		g_atMainMenu = false;
 		g_classicThisVisit = false;
+		g_lobbyFailedThisVisit = false;
 		g_startupMenu = false;
 	}
 
@@ -574,6 +595,8 @@ namespace charselect::frontend
 		logger::info("Frontend: quit to desktop");
 		lobby::BeginLeaving("quit");
 		lobby::Teardown();
+		// What the game's own Quit to Desktop sets: the main loop ends and the
+		// game closes normally.
 		if (auto* main = RE::Main::GetSingleton()) {
 			main->GetRuntimeData().quitGame = true;
 		}

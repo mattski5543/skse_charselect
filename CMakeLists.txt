@@ -7,9 +7,9 @@ project(
 	LANGUAGES CXX)
 
 # Test builds keep the release version and add a beta number: "b1" makes
-# CharSelect-1.0.0-b1.zip, and the log and installer say 1.0.0-b1. Empty for a
-# release; the version itself only changes for one.
-set(CHARSELECT_BETA "b1")
+# CharSelect-<version>-b1.zip, and the log and installer say <version>-b1.
+# Empty for a release; the version itself only changes for one.
+set(CHARSELECT_BETA "b2")
 if(CHARSELECT_BETA)
 	set(CHARSELECT_DISPLAY_VERSION "${PROJECT_VERSION}-${CHARSELECT_BETA}")
 else()
@@ -116,14 +116,16 @@ endif()
 # Output: dist/<name>-<version>.zip, a FOMOD installer archive for Vortex/MO2:
 #   Core/       the plugin (+ the stripped .pdb, so crash loggers can name our functions),
 #               the layouts and the menu movie, always installed
-#   Locations/  one CharSelect.ini per select screen location, one installed
+#   Locations/  one CharSelect.ini per location and main menu choice, one installed
 #   fomod/      the installer (fomod/ in the repo; see cmake/StageFomod.cmake)
 #   LICENSE.txt, THIRD_PARTY_NOTICES.txt  the GPL and the libraries' licences
 # Optionally also copy straight into a mod folder by configuring with
 # -DDEPLOY_DIR="<path to mod folder>".
 # ------------------------------------------------------------------------------
-set(STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/package")
-set(DIST_ZIP "${PROJECT_SOURCE_DIR}/dist/${PROJECT_NAME}-${CHARSELECT_DISPLAY_VERSION}.zip")
+# Per configuration: a Debug build (its DLL needs the debug runtime, which
+# players don't have) gets "-debug" on its zip, so it can't pass for a release.
+set(STAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/package/$<CONFIG>")
+set(DIST_ZIP "${PROJECT_SOURCE_DIR}/dist/${PROJECT_NAME}-${CHARSELECT_DISPLAY_VERSION}$<$<CONFIG:Debug>:-debug>.zip")
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E remove_directory "${STAGE_DIR}"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "${STAGE_DIR}/Core/SKSE/Plugins" "${PROJECT_SOURCE_DIR}/dist"

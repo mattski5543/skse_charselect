@@ -73,8 +73,12 @@ namespace charselect::paths
 			}
 			return std::format("<{}>\\{}", a_name, text::PathUtf8(relative));
 		};
-		if (auto shown = under(MyGamesDir(), "My Games")) {
-			return *shown;
+		// The folder under My Games by name: "Skyrim Special Edition", or the
+		// GOG one.
+		if (const auto myGames = MyGamesDir()) {
+			if (auto shown = under(myGames, "My Games\\" + text::PathUtf8(myGames->filename()))) {
+				return *shown;
+			}
 		}
 		std::error_code ec;
 		const auto      game = std::filesystem::current_path(ec);

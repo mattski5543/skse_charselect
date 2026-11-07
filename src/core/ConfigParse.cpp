@@ -57,7 +57,9 @@ namespace charselect::config
 				} else if (id == "general.blobbyonload") {
 					a_settings.lobbyOnLoad = ParseBool(value);
 				} else if (id == "general.ilobbyhotkey") {
-					a_settings.lobbyHotkey = static_cast<std::uint32_t>(std::stoul(value, nullptr, 0));
+					// Hex with 0x, decimal otherwise (not octal for a leading 0).
+					const bool hex = value.starts_with("0x") || value.starts_with("0X");
+					a_settings.lobbyHotkey = static_cast<std::uint32_t>(std::stoul(value, nullptr, hex ? 16 : 10));
 				} else if (id == "general.bdebuglog") {
 					a_settings.debugLog = ParseBool(value);
 				} else if (id == "lobby.slobbycell") {
@@ -65,7 +67,7 @@ namespace charselect::config
 				} else if (id == "lobby.sfallbackcell") {
 					a_settings.fallbackCell = value;
 				} else if (id == "lobby.imaxcharacters") {
-					a_settings.maxCharacters = std::clamp<std::size_t>(std::stoul(value), 1, 9);
+					a_settings.maxCharacters = static_cast<std::size_t>(std::clamp(std::stol(value), 1L, 9L));  // stoul would wrap a negative
 				} else if (id == "lobby.sstandinoutfit") {
 					a_settings.standInOutfit.clear();
 					std::string_view rest = value;

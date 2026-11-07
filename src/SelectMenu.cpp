@@ -65,6 +65,7 @@ namespace charselect
 			int                           repeatClicks{ 0 };
 			std::vector<SelectMenu::Nav>  navs;
 			std::optional<std::size_t>    selectRequest;
+			std::optional<std::size_t>    highlighted;  // ShowSelect: the lobby's lit character, to start on
 			std::vector<SelectMenu::EditKey> editKeys;
 			bool                          gamepad{ false };  // last input came from a gamepad
 			bool                          reshow{ false };   // a Show*() call: ends a fade-out blackout
@@ -1236,11 +1237,15 @@ namespace charselect
 	void SelectMenu::ShowSelect()
 	{
 		auto slots = lobby::GetSlots();
+		// A new menu starts on the first character, but a lobby resumed after
+		// a cancelled load still has the light on the one that was picked.
+		const auto lit = lobby::HighlightedSlot();
 		{
 			std::scoped_lock lock(g_shared.lock);
 			g_shared.mode = Mode::kSelect;
 			g_shared.reshow = true;
 			g_shared.slots = std::move(slots);
+			g_shared.highlighted = lit;
 			g_shared.dirty = true;
 		}
 		if (!IsOpen()) {
@@ -1405,6 +1410,9 @@ namespace charselect
 				g_view.splashText = g_shared.splashText;
 				g_view.gamepad = g_shared.gamepad;
 				g_view.slots = g_shared.slots;
+				if (const auto lit = std::exchange(g_shared.highlighted, std::nullopt)) {
+					g_view.selected = *lit;
+				}
 				if (g_view.selected >= g_view.slots.size()) {
 					g_view.selected = 0;
 				}

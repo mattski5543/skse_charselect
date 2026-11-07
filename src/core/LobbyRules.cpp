@@ -90,9 +90,9 @@ namespace charselect::lobby::rules
 		return a_state == State::kActive && a_revealed && !a_editorOpen && !a_selectMenuOpen;
 	}
 
-	LoadWatch CheckLoadStart(bool a_sameGeneration, State a_state, bool a_loadStarted, bool a_promptOrLoadingOpen)
+	LoadWatch CheckLoadStart(bool a_sameLoad, State a_state, bool a_loadStarted, bool a_promptOrLoadingOpen)
 	{
-		if (!a_sameGeneration || a_state != State::kLoadingSave || a_loadStarted) {
+		if (!a_sameLoad || a_state != State::kLoadingSave || a_loadStarted) {
 			return LoadWatch::kStop;
 		}
 		return a_promptOrLoadingOpen ? LoadWatch::kRecheck : LoadWatch::kResume;

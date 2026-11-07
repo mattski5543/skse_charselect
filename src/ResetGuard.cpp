@@ -309,6 +309,11 @@ namespace charselect::resetguard
 		{
 			Snapshot s{ std::string(a_why) };
 			ForEachForm([&](RE::FormID a_id, RE::TESForm* a_form) {
+				// Not the player's record: after a load it's the loaded character's,
+				// set up by the save, and the lobby's player was someone else.
+				if (a_id == kPlayerBaseId) {
+					return;
+				}
 				switch (a_form->GetFormType()) {
 				case RE::FormType::Armor:
 					{
@@ -327,8 +332,8 @@ namespace charselect::resetguard
 					if (a_details) {
 						const auto* part = static_cast<const RE::BGSHeadPart*>(a_form);
 						s.headParts.emplace(a_id, HeadPartState{ part, part->textureSet, Str(part->GetModel()) });
-						break;
 					}
+					break;
 				case RE::FormType::TextureSet:
 					if (a_details) {
 						const auto* set = static_cast<const RE::BGSTextureSet*>(a_form);
@@ -337,8 +342,8 @@ namespace charselect::resetguard
 							st.paths[i] = Str(set->textures[i].textureName.c_str());
 						}
 						s.textureSets.emplace(a_id, std::move(st));
-						break;
 					}
+					break;
 				default:
 					break;
 				}
@@ -387,11 +392,11 @@ namespace charselect::resetguard
 		// NPC's look, outfit or weight, but not empty its base record's lists.
 		// The record's head data, face data and tint list are freed but may
 		// still be pointed at, so this looks only at the lists, never into
-		// those blocks. Not the player's: the save sets that one up.
+		// those blocks.
 		bool ListsGone(const NpcState& a_st)
 		{
 			const auto* npc = a_st.npc;
-			if (npc->GetFormID() == kPlayerBaseId || a_st.spells.size() + a_st.levSpells.size() + a_st.shouts.size() + a_st.perks.size() == 0) {
+			if (a_st.spells.size() + a_st.levSpells.size() + a_st.shouts.size() + a_st.perks.size() == 0) {
 				return false;
 			}
 			const auto* d = npc->actorEffects;

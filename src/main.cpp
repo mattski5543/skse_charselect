@@ -143,28 +143,27 @@ namespace
 
 	void InitializeLog(std::string_view a_pluginName)
 	{
-		auto path = logger::log_directory();
-		if (!path) {
-			SKSE::stl::report_and_fail("CharSelect: failed to find the SKSE log directory"sv);
-		}
-		*path /= std::format("{}.log", a_pluginName);
-
-		// Keep the previous session's log (CharSelect.1.log): what went wrong
-		// is often only noticed after a restart.
-		std::error_code ec;
-		auto            previous = *path;
-		previous.replace_extension(".1.log");
-		if (std::filesystem::exists(*path, ec)) {
-			std::filesystem::rename(*path, previous, ec);
-		}
-
-		// path::string() throws for a Documents path the ANSI code page can't
-		// hold, and the sink throws if the file can't be opened: run without a
-		// log rather than fail to load.
+		// No log folder, a Documents path the ANSI code page can't hold
+		// (path::string() throws), or a file that can't be opened (the sink
+		// throws): run without a log rather than fail to load.
 		std::shared_ptr<spdlog::sinks::sink> sink;
-		try {
-			sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true);
-		} catch (const std::exception&) {
+		if (auto path = logger::log_directory()) {
+			*path /= std::format("{}.log", a_pluginName);
+
+			// Keep the previous session's log (CharSelect.1.log): what went wrong
+			// is often only noticed after a restart.
+			std::error_code ec;
+			auto            previous = *path;
+			previous.replace_extension(".1.log");
+			if (std::filesystem::exists(*path, ec)) {
+				std::filesystem::rename(*path, previous, ec);
+			}
+			try {
+				sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true);
+			} catch (const std::exception&) {
+			}
+		}
+		if (!sink) {
 			sink = std::make_shared<spdlog::sinks::null_sink_mt>();
 		}
 		auto log = std::make_shared<spdlog::logger>("global"s, std::move(sink));
