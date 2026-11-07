@@ -1,0 +1,9 @@
+# The installer's main menu choices: <folder>=<bReplaceMainMenu>,<bReplaceAtStartup>,
+# one per line. For every location in locations.txt and every line here, the
+# packaging step (cmake/StageFomod.cmake) writes a CharSelect.ini under
+# Locations\<location>\<folder> with those values, and ModuleConfig.xml installs
+# the one matching both choices. The first is the default (and the shipped
+# CharSelect.ini's values); the tests check all of it.
+Startup=1,1
+Return=1,0
+Hotkey=0,1

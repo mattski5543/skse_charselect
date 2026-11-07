@@ -1,6 +1,7 @@
 // The installer (fomod/) agrees with the shipped files: every location in
-// locations.txt is offered by ModuleConfig.xml and has a built-in layout, and
-// the first is the shipped default.
+// locations.txt and every main menu choice in mainmenu.txt is offered by
+// ModuleConfig.xml, every pair of them installs its own CharSelect.ini, every
+// location has a built-in layout, and the first of each is the shipped default.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -41,11 +42,11 @@ namespace
 		return n;
 	}
 
-	// folder, cell editor ID
-	std::vector<std::pair<std::string, std::string>> Locations()
+	// The <name>=<value> lines of one of fomod's lists.
+	std::vector<std::pair<std::string, std::string>> ReadList(const char* a_file)
 	{
 		std::vector<std::pair<std::string, std::string>> out;
-		std::istringstream in(ReadAll(Source() / "fomod" / "locations.txt"));
+		std::istringstream in(ReadAll(Source() / "fomod" / a_file));
 		for (std::string line; std::getline(in, line);) {
 			if (!line.empty() && line.back() == '\r') {
 				line.pop_back();
@@ -59,6 +60,17 @@ namespace
 		}
 		return out;
 	}
+
+	// folder, cell editor ID
+	std::vector<std::pair<std::string, std::string>> Locations() { return ReadList("locations.txt"); }
+	// folder, "<bReplaceMainMenu>,<bReplaceAtStartup>"
+	std::vector<std::pair<std::string, std::string>> MainMenuModes() { return ReadList("mainmenu.txt"); }
+
+	// The INI line "<key> = <value>" exactly once, whatever the line endings.
+	std::size_t CountLine(const std::string& a_ini, const std::string& a_line)
+	{
+		return Count(a_ini, "\n" + a_line + "\r\n") + Count(a_ini, "\n" + a_line + "\n");
+	}
 }
 
 TEST_CASE("The installer offers every location, each with a layout", "[fomod][shipped]")
@@ -68,26 +80,72 @@ TEST_CASE("The installer offers every location, each with a layout", "[fomod][sh
 	const auto config = ReadAll(Source() / "fomod" / "ModuleConfig.xml");
 	const auto layouts = Lower(ReadAll(Source() / "dist-files" / "SKSE" / "Plugins" / "CharSelectLayouts.ini"));
 
-	CHECK(Count(config, "source=\"Locations\\") == locations.size());
+	CHECK(Count(config, "<flag name=\"location\">") == locations.size());
 	for (const auto& [folder, cell] : locations) {
 		INFO(folder << " = " << cell);
-		CHECK(Count(config, "source=\"Locations\\" + folder + "\"") == 1);
+		CHECK(Count(config, "<flag name=\"location\">" + folder + "</flag>") == 1);
 		CHECK(Count(config, "<image path=\"fomod\\images\\" + folder + ".jpg\" />") == 1);
 		CHECK(Count(layouts, "\n[" + Lower(cell) + "]") == 1);
 	}
-	// One choice preselected: the first, which is also the shipped default.
-	CHECK(Count(config, "<type name=\"Recommended\" />") == 1);
-	const auto recommended = config.find("<type name=\"Recommended\" />");
-	const auto first = config.find("source=\"Locations\\" + locations.front().first + "\"");
-	const auto second = config.find("source=\"Locations\\" + locations[1].first + "\"");
-	CHECK(first < recommended);
-	CHECK(recommended < second);
 }
 
-TEST_CASE("The shipped CharSelect.ini uses the installer's default location", "[fomod][shipped]")
+TEST_CASE("The installer offers every main menu choice", "[fomod][shipped]")
+{
+	const auto modes = MainMenuModes();
+	REQUIRE(modes.size() >= 2);
+	const auto config = ReadAll(Source() / "fomod" / "ModuleConfig.xml");
+	CHECK(Count(config, "<flag name=\"mainmenu\">") == modes.size());
+	for (const auto& [folder, values] : modes) {
+		INFO(folder << " = " << values);
+		CHECK(Count(config, "<flag name=\"mainmenu\">" + folder + "</flag>") == 1);
+		CHECK((values == "0,0" || values == "0,1" || values == "1,0" || values == "1,1"));
+	}
+}
+
+TEST_CASE("Every location and main menu choice installs its own CharSelect.ini", "[fomod][shipped]")
+{
+	auto config = ReadAll(Source() / "fomod" / "ModuleConfig.xml");
+	std::erase(config, '\r');  // a checkout may have CRLF line endings
+	const auto locations = Locations();
+	const auto modes = MainMenuModes();
+	CHECK(Count(config, "<pattern>") == locations.size() * modes.size());
+	CHECK(Count(config, "source=\"Locations\\") == locations.size() * modes.size());
+	for (const auto& location : locations) {
+		for (const auto& mode : modes) {
+			INFO(location.first << " / " << mode.first);
+			const auto pattern = std::string("<flagDependency flag=\"location\" value=\"") + location.first + "\" />\n\t\t\t\t\t<flagDependency flag=\"mainmenu\" value=\"" + mode.first + "\" />\n\t\t\t\t</dependencies>\n\t\t\t\t<files>\n\t\t\t\t\t<folder source=\"Locations\\" + location.first + "\\" + mode.first + "\" destination=\"\" />";
+			CHECK(Count(config, pattern) == 1);
+		}
+	}
+}
+
+TEST_CASE("The first location and main menu choice are preselected", "[fomod][shipped]")
+{
+	const auto config = ReadAll(Source() / "fomod" / "ModuleConfig.xml");
+	CHECK(Count(config, "<type name=\"Recommended\" />") == 2);
+	const auto firstRecommended = config.find("<type name=\"Recommended\" />");
+	const auto secondRecommended = config.find("<type name=\"Recommended\" />", firstRecommended + 1);
+	const auto locations = Locations();
+	const auto modes = MainMenuModes();
+	const auto location0 = config.find("<flag name=\"location\">" + locations[0].first + "<");
+	const auto location1 = config.find("<flag name=\"location\">" + locations[1].first + "<");
+	const auto mode0 = config.find("<flag name=\"mainmenu\">" + modes[0].first + "<");
+	const auto mode1 = config.find("<flag name=\"mainmenu\">" + modes[1].first + "<");
+	CHECK(location0 < firstRecommended);
+	CHECK(firstRecommended < location1);
+	CHECK(mode0 < secondRecommended);
+	CHECK(secondRecommended < mode1);
+}
+
+TEST_CASE("The shipped CharSelect.ini uses the installer's defaults", "[fomod][shipped]")
 {
 	const auto ini = ReadAll(Source() / "dist-files" / "SKSE" / "Plugins" / "CharSelect.ini");
-	// The packaging step replaces this one line per location.
+	// The packaging step replaces these lines for each location and choice.
 	CHECK(Count(ini, "\nsLobbyCell = ") == 1);
-	CHECK(Count(ini, "\nsLobbyCell = " + Locations().front().second + "\r\n") + Count(ini, "\nsLobbyCell = " + Locations().front().second + "\n") == 1);
+	CHECK(Count(ini, "\nbReplaceMainMenu = ") == 1);
+	CHECK(Count(ini, "\nbReplaceAtStartup = ") == 1);
+	CHECK(CountLine(ini, "sLobbyCell = " + Locations().front().second) == 1);
+	const auto values = MainMenuModes().front().second;  // "<bReplaceMainMenu>,<bReplaceAtStartup>"
+	CHECK(CountLine(ini, std::string("bReplaceMainMenu = ") + values[0]) == 1);
+	CHECK(CountLine(ini, std::string("bReplaceAtStartup = ") + values[2]) == 1);
 }

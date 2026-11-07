@@ -233,6 +233,11 @@ TEST_CASE("The main menu is replaced only when everything allows it", "[lobby][f
 	{
 		ctx.replaceMainMenu = false;
 	}
+	SECTION("bReplaceAtStartup = 0, on the main menu the game started on")
+	{
+		ctx.replaceAtStartup = false;
+		ctx.startupMenu = true;
+	}
 	SECTION("no RaceMenu")
 	{
 		ctx.raceMenuLoaded = false;
@@ -269,4 +274,17 @@ TEST_CASE("A console load while the lobby starts", "[lobby][sequence]")
 	CHECK(OnPostLoadGame(state, true) == PostLoad::kIgnore);
 	CHECK_FALSE(ShouldDismissMessageBoxes(state, false));
 	CHECK(CanEnter(state));
+}
+
+TEST_CASE("bReplaceAtStartup = 0 keeps only the startup main menu", "[lobby][frontend]")
+{
+	MainMenuContext ctx{};
+	ctx.replaceAtStartup = false;
+	ctx.startupMenu = true;
+	CHECK_FALSE(ShouldReplaceMainMenu(ctx));  // the game has just started
+	ctx.startupMenu = false;
+	CHECK(ShouldReplaceMainMenu(ctx));  // back from a game
+	ctx.replaceAtStartup = true;
+	ctx.startupMenu = true;
+	CHECK(ShouldReplaceMainMenu(ctx));  // the default replaces both
 }

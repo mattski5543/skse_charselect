@@ -100,7 +100,7 @@ namespace charselect::lobby::rules
 
 	bool ShouldReplaceMainMenu(const MainMenuContext& a_ctx)
 	{
-		return a_ctx.replaceMainMenu && a_ctx.raceMenuLoaded && !a_ctx.classicThisVisit && !a_ctx.actionPending &&
+		return a_ctx.replaceMainMenu && (a_ctx.replaceAtStartup || !a_ctx.startupMenu) && a_ctx.raceMenuLoaded && !a_ctx.classicThisVisit && !a_ctx.actionPending &&
 		       a_ctx.state == State::kIdle && !a_ctx.loadFailedRecently && a_ctx.menuAvailable;
 	}
 }

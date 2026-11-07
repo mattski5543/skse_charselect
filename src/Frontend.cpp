@@ -18,6 +18,7 @@ namespace charselect::frontend
 		bool   g_classicThisVisit{ false };  // stay on the vanilla menu until it closes
 		bool   g_viaHotkey{ false };         // this visit's lobby was asked for with the hotkey
 		bool   g_covered{ false };           // CoverMainMenu hid it for the lobby this visit
+		bool   g_startupMenu{ true };        // the main menu the game started on, until it first closes
 		std::string g_failureMessage;        // a lobby that failed in its own game: shown at the main menu
 
 		std::optional<std::chrono::steady_clock::time_point> g_mainMenuOpenedAt;  // until the lobby shows
@@ -37,6 +38,8 @@ namespace charselect::frontend
 		bool WillReplace()
 		{
 			return lobby::rules::ShouldReplaceMainMenu({ .replaceMainMenu = config::Get().replaceMainMenu,
+				.replaceAtStartup = config::Get().replaceAtStartup,
+				.startupMenu = g_startupMenu,
 				.raceMenuLoaded = g_raceMenu,
 				.classicThisVisit = g_classicThisVisit,
 				.actionPending = g_pending != Action::kNone,
@@ -254,6 +257,11 @@ namespace charselect::frontend
 				SelectMenu::Hide();
 				return;
 			}
+			if (g_startupMenu && !config::Get().replaceAtStartup) {
+				logger::info("Frontend: showing the vanilla main menu at startup (bReplaceAtStartup = 0)");
+				SelectMenu::Hide();
+				return;
+			}
 			if (!g_raceMenu) {
 				SelectMenu::Hide();
 				WarnNoRaceMenu();
@@ -280,6 +288,7 @@ namespace charselect::frontend
 	{
 		g_atMainMenu = false;
 		g_classicThisVisit = false;
+		g_startupMenu = false;
 	}
 
 	void EnterFromHotkey()

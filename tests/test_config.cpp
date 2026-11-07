@@ -209,3 +209,10 @@ TEST_CASE("A UTF-8 BOM before the first section", "[config]")
 	CHECK_FALSE(s.replaceMainMenu);
 	CHECK(log.warnings.empty());
 }
+
+TEST_CASE("bReplaceAtStartup", "[config]")
+{
+	CHECK(Settings{}.replaceAtStartup);
+	CHECK_FALSE(ParseText("[General]\nbReplaceAtStartup = 0\n").replaceAtStartup);
+	CHECK(ParseText("[General]\nbReplaceAtStartup = 1\n").replaceAtStartup);
+}

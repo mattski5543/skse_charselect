@@ -97,6 +97,8 @@ namespace charselect::lobby::rules
 	struct MainMenuContext
 	{
 		bool  replaceMainMenu{ true };   // CharSelect.ini bReplaceMainMenu
+		bool  replaceAtStartup{ true };  // CharSelect.ini bReplaceAtStartup
+		bool  startupMenu{ false };      // the main menu the game started on (not back from a game)
 		bool  raceMenuLoaded{ true };    // skee64.dll is loaded
 		bool  classicThisVisit{ false };  // the player picked MAIN MENU on the select screen
 		bool  actionPending{ false };     // NEW GAME or MAIN MENU on its way through the main menu
@@ -104,6 +106,7 @@ namespace charselect::lobby::rules
 		bool  loadFailedRecently{ false };
 		bool  menuAvailable{ true };  // the select menu's SWF loaded
 	};
-	// The main menu opening becomes the select screen.
+	// The main menu opening becomes the select screen. (F7 opens it whatever
+	// these say.)
 	[[nodiscard]] bool ShouldReplaceMainMenu(const MainMenuContext& a_ctx);
 }

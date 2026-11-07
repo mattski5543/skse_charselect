@@ -1,8 +1,10 @@
 # Writes the installer's files into a staged package (run with cmake -P after
 # the plugin and dist-files are staged under STAGE_DIR/Core):
 #   STAGE_DIR/fomod/info.xml, ModuleConfig.xml, and images/ if fomod/images exists
-#   STAGE_DIR/Locations/<folder>/SKSE/Plugins/CharSelect.ini, one per line of
-#   fomod/locations.txt, each the shipped CharSelect.ini with its sLobbyCell.
+#   STAGE_DIR/Locations/<location>/<mode>/SKSE/Plugins/CharSelect.ini, one for
+#   every line of fomod/locations.txt and fomod/mainmenu.txt together: the
+#   shipped CharSelect.ini with that sLobbyCell, bReplaceMainMenu and
+#   bReplaceAtStartup.
 # Arguments: -DSOURCE_DIR=... -DSTAGE_DIR=... -DPROJECT_VERSION=... -DPROJECT_AUTHOR=...
 
 foreach(arg SOURCE_DIR STAGE_DIR PROJECT_VERSION PROJECT_AUTHOR)
@@ -20,11 +22,25 @@ if(EXISTS "${SOURCE_DIR}/fomod/images")
 endif()
 
 file(READ "${SOURCE_DIR}/dist-files/SKSE/Plugins/CharSelect.ini" ini)
-string(REGEX MATCHALL "\nsLobbyCell = [^\r\n]*" found "${ini}")
-list(LENGTH found count)
-if(NOT count EQUAL 1)
-	message(FATAL_ERROR "StageFomod.cmake: CharSelect.ini needs exactly one 'sLobbyCell = ' line (found ${count})")
-endif()
+foreach(key sLobbyCell bReplaceMainMenu bReplaceAtStartup)
+	string(REGEX MATCHALL "\n${key} = [^\r\n]*" found "${ini}")
+	list(LENGTH found count)
+	if(NOT count EQUAL 1)
+		message(FATAL_ERROR "StageFomod.cmake: CharSelect.ini needs exactly one '${key} = ' line (found ${count})")
+	endif()
+endforeach()
+
+set(modes "")
+file(STRINGS "${SOURCE_DIR}/fomod/mainmenu.txt" mode_lines)
+foreach(line IN LISTS mode_lines)
+	if(line MATCHES "^#" OR line STREQUAL "")
+		continue()
+	endif()
+	if(NOT line MATCHES "^[A-Za-z0-9]+=[01],[01]$")
+		message(FATAL_ERROR "StageFomod.cmake: bad line in mainmenu.txt: '${line}'")
+	endif()
+	list(APPEND modes "${line}")
+endforeach()
 
 file(STRINGS "${SOURCE_DIR}/fomod/locations.txt" lines)
 foreach(line IN LISTS lines)
@@ -36,6 +52,14 @@ foreach(line IN LISTS lines)
 	endif()
 	set(folder "${CMAKE_MATCH_1}")
 	set(cell "${CMAKE_MATCH_2}")
-	string(REGEX REPLACE "\nsLobbyCell = [^\r\n]*" "\nsLobbyCell = ${cell}" out "${ini}")
-	file(WRITE "${STAGE_DIR}/Locations/${folder}/SKSE/Plugins/CharSelect.ini" "${out}")
+	string(REGEX REPLACE "\nsLobbyCell = [^\r\n]*" "\nsLobbyCell = ${cell}" located "${ini}")
+	foreach(mode IN LISTS modes)
+		string(REGEX MATCH "^([A-Za-z0-9]+)=([01]),([01])$" parsed "${mode}")
+		set(mode_folder "${CMAKE_MATCH_1}")
+		set(replace "${CMAKE_MATCH_2}")
+		set(at_startup "${CMAKE_MATCH_3}")
+		string(REGEX REPLACE "\nbReplaceMainMenu = [^\r\n]*" "\nbReplaceMainMenu = ${replace}" out "${located}")
+		string(REGEX REPLACE "\nbReplaceAtStartup = [^\r\n]*" "\nbReplaceAtStartup = ${at_startup}" out "${out}")
+		file(WRITE "${STAGE_DIR}/Locations/${folder}/${mode_folder}/SKSE/Plugins/CharSelect.ini" "${out}")
+	endforeach()
 endforeach()
