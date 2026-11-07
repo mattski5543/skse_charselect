@@ -9,7 +9,7 @@ project(
 # Test builds keep the release version and add a beta number: "b1" makes
 # CharSelect-<version>-b1.zip, and the log and installer say <version>-b1.
 # Empty for a release; the version itself only changes for one.
-set(CHARSELECT_BETA "b1")
+set(CHARSELECT_BETA "")
 if(CHARSELECT_BETA)
 	set(CHARSELECT_DISPLAY_VERSION "${PROJECT_VERSION}-${CHARSELECT_BETA}")
 else()
