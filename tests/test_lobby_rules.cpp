@@ -289,16 +289,17 @@ TEST_CASE("bReplaceAtStartup = 0 keeps only the startup main menu", "[lobby][fro
 	CHECK(ShouldReplaceMainMenu(ctx));  // the default replaces both
 }
 
-TEST_CASE("The camera is put back in first person only when it shows the player from outside", "[lobby][camera]")
+TEST_CASE("The held camera goes to the eyes only for a reading that can be the eyes", "[lobby][camera]")
 {
-	CHECK_FALSE(ShouldForceFirstPerson(true, 0.0f));
-	CHECK_FALSE(ShouldForceFirstPerson(true, 300.0f));
-	CHECK(ShouldForceFirstPerson(false, 300.0f));                 // third person, behind the player
-	CHECK_FALSE(ShouldForceFirstPerson(false, 10.0f));            // another mod's first person, at the head
-	CHECK_FALSE(ShouldForceFirstPerson(false, kAtHeadDistance));  // the edge counts as at the head
+	CHECK(LooksLikeEyes(0.0f, kDefaultEyeHeight));
+	CHECK(LooksLikeEyes(10.0f, 125.0f));               // the first-person camera, a little forward
+	CHECK(LooksLikeEyes(kAtHeadDistance, 125.0f));     // the edge counts
+	CHECK_FALSE(LooksLikeEyes(200.0f, 125.0f));        // a third-person camera behind the player
+	CHECK_FALSE(LooksLikeEyes(0.0f, 0.0f));            // the 3D not in place: the feet
+	CHECK_FALSE(LooksLikeEyes(0.0f, 1000.0f));
 }
 
-TEST_CASE("Putting the camera back stops when another mod keeps switching it away", "[lobby][camera]")
+TEST_CASE("Taking the camera back stops when another mod keeps switching it away", "[lobby][camera]")
 {
 	using Clock = CameraFixLimiter::Clock;
 	const auto t0 = Clock::time_point{} + 1h;

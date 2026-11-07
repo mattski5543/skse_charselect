@@ -112,14 +112,16 @@ namespace charselect::lobby::rules
 	// these say.)
 	[[nodiscard]] bool ShouldReplaceMainMenu(const MainMenuContext& a_ctx);
 
-	// The lobby is seen through its player's eyes. A camera out of first
-	// person is put back only when it's away from the player's head, showing
-	// them from outside; a third-person camera at the head is another mod's
-	// first person (Body In First Person), and is left alone.
-	inline constexpr float kAtHeadDistance = 60.0f;  // game units
-	[[nodiscard]] bool ShouldForceFirstPerson(bool a_firstPerson, float a_cameraToHead);
+	// The lobby is seen through its player's eyes, with the free camera held
+	// there (camera mods leave it alone). Where the eyes are, from the
+	// player's feet, is read from the camera or the head once the player is
+	// in place; a reading that can't be the eyes (the 3D not ready yet) gives
+	// way to kDefaultEyeHeight straight up.
+	inline constexpr float kAtHeadDistance = 60.0f;     // game units: a camera this close to the head is at the eyes
+	inline constexpr float kDefaultEyeHeight = 120.0f;  // about a Nord's
+	[[nodiscard]] bool LooksLikeEyes(float a_sideways, float a_up);
 
-	// Putting the camera back, until another mod keeps switching it away:
+	// Taking the camera back, until another mod keeps switching it away:
 	// more than kMaxFixes within kWindow, and the lobby stops fighting it.
 	class CameraFixLimiter
 	{

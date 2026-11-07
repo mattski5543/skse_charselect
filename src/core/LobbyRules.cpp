@@ -107,9 +107,12 @@ namespace charselect::lobby::rules
 
 namespace charselect::lobby::rules
 {
-	bool ShouldForceFirstPerson(bool a_firstPerson, float a_cameraToHead)
+	bool LooksLikeEyes(float a_sideways, float a_up)
 	{
-		return !a_firstPerson && a_cameraToHead > kAtHeadDistance;
+		// From a child's eyes to a giant race's.
+		constexpr float kLowest = 40.0f;
+		constexpr float kHighest = 250.0f;
+		return a_sideways <= kAtHeadDistance && a_up >= kLowest && a_up <= kHighest;
 	}
 
 	bool CameraFixLimiter::Allow(Clock::time_point a_now)

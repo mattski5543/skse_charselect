@@ -659,6 +659,110 @@ namespace charselect::lobby
 			a_actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, a_slot.heading });
 		}
 
+		// The lobby is seen through its player's eyes, with the free camera
+		// (the console's tfc) held there rather than the first-person camera.
+		// Camera mods leave the free camera alone, so nothing moves the view
+		// by itself: Body In First Person, for one, runs a third-person camera
+		// at the head that sways with every breath, and Immersive Equipping
+		// Animations switches to third person when something equips the
+		// player. The player's body is hidden, as the camera is inside it.
+		// The fast sweep holds it there; Teardown gives the camera back.
+		bool                    g_cameraHeld{ false };  // the free camera is ours
+		RE::NiPoint3            g_eyeOffset;            // the eyes, from the player's feet
+		std::uint32_t           g_cameraTakes{ 0 };     // this lobby: times another mod took the camera
+		rules::CameraFixLimiter g_cameraLimiter;
+
+		void HidePlayerBody(bool a_hide)
+		{
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			auto* body = player ? player->Get3D(false) : nullptr;
+			if (body && body->GetAppCulled() != a_hide) {
+				body->SetAppCulled(a_hide);
+			}
+		}
+
+		void AimHeldCamera(RE::PlayerCamera& a_camera)
+		{
+			auto* state = a_camera.currentState.get();
+			if (!state || state->id != RE::CameraState::kFree) {
+				return;
+			}
+			auto* free = static_cast<RE::FreeCameraState*>(state);
+			free->translation = g_stage.camera + g_eyeOffset;
+			free->rotation.x = g_stage.cameraPitch;
+			free->rotation.y = g_stage.cameraYaw;
+			// Its movement keys: nothing left pressed to drift it.
+			free->zUpDown = {};
+			free->verticalDirection = 0;
+		}
+
+		// The first-person camera if it's at the head (PlacePlayer put it
+		// there), else the head itself.
+		RE::NiPoint3 ReadEyeOffset(const RE::PlayerCamera& a_camera, RE::PlayerCharacter& a_player)
+		{
+			RE::NiPoint3 eyes = a_player.GetLookingAtLocation();
+			if (a_camera.IsInFirstPerson() && a_camera.cameraRoot && a_camera.cameraRoot->world.translate.GetDistance(eyes) <= rules::kAtHeadDistance) {
+				eyes = a_camera.cameraRoot->world.translate;
+			}
+			const RE::NiPoint3 offset = eyes - a_player.GetPosition();
+			if (!rules::LooksLikeEyes(std::sqrt(offset.x * offset.x + offset.y * offset.y), offset.z)) {
+				logger::debug("Lobby: eyes read at ({:.0f}, {:.0f}, {:.0f}) from the feet; using {:.0f} up", offset.x, offset.y, offset.z, rules::kDefaultEyeHeight);
+				return { 0.0f, 0.0f, rules::kDefaultEyeHeight };
+			}
+			return offset;
+		}
+
+		void HoldCamera()
+		{
+			auto* camera = RE::PlayerCamera::GetSingleton();
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (!camera || !player || g_cameraLimiter.GaveUp()) {
+				return;
+			}
+			if (!camera->IsInFreeCameraMode()) {
+				const int state = camera->currentState ? static_cast<int>(camera->currentState->id) : -1;
+				if (g_cameraHeld) {
+					if (!g_cameraLimiter.Allow(std::chrono::steady_clock::now())) {
+						logger::warn("Lobby: another mod keeps taking the camera (camera state {}); leaving it to that mod", state);
+						HidePlayerBody(false);
+						return;
+					}
+					if (++g_cameraTakes == 1) {
+						logger::info("Lobby: another mod took the camera (camera state {}); taken back", state);
+					} else {
+						logger::debug("Lobby: another mod took the camera again (camera state {}); taken back", state);
+					}
+				} else {
+					g_eyeOffset = ReadEyeOffset(*camera, *player);
+				}
+				camera->ToggleFreeCameraMode(false);
+				if (!camera->IsInFreeCameraMode()) {
+					// The next sweep tries again, a few times.
+					if (!g_cameraHeld && !g_cameraLimiter.Allow(std::chrono::steady_clock::now())) {
+						logger::warn("Lobby: the free camera wouldn't turn on (camera state {}); leaving the camera as it is", state);
+					}
+					return;
+				}
+				if (!std::exchange(g_cameraHeld, true)) {
+					logger::info("Lobby: camera held at the player's eyes ({:.0f} up, camera state {} before)", g_eyeOffset.z, state);
+				}
+			}
+			AimHeldCamera(*camera);
+			HidePlayerBody(true);
+		}
+
+		void ReleaseCamera()
+		{
+			if (!std::exchange(g_cameraHeld, false)) {
+				return;
+			}
+			HidePlayerBody(false);
+			if (auto* camera = RE::PlayerCamera::GetSingleton(); camera && camera->IsInFreeCameraMode()) {
+				camera->ToggleFreeCameraMode(false);
+			}
+			logger::debug("Lobby: camera released");
+		}
+
 		void PlacePlayer()
 		{
 			auto* player = RE::PlayerCharacter::GetSingleton();
@@ -667,8 +771,14 @@ namespace charselect::lobby
 			}
 			player->SetPosition(g_stage.camera, true);
 			player->SetAngle(RE::NiPoint3{ g_stage.cameraPitch, 0.0f, g_stage.cameraYaw });
-			if (auto* camera = RE::PlayerCamera::GetSingleton()) {
-				camera->ForceFirstPerson();
+			auto* camera = RE::PlayerCamera::GetSingleton();
+			if (!camera) {
+				return;
+			}
+			if (g_cameraHeld) {
+				AimHeldCamera(*camera);  // the editor moved the camera
+			} else {
+				camera->ForceFirstPerson();  // the eyes to read for HoldCamera
 			}
 		}
 
@@ -1125,40 +1235,6 @@ namespace charselect::lobby
 			return main && main->GetRuntimeData().resetGame;
 		}
 
-		std::uint32_t           g_cameraFixes{ 0 };  // this lobby: times first person was put back
-		rules::CameraFixLimiter g_cameraLimiter;
-
-		// The lobby is seen through its player's eyes (PlacePlayer). Mods that
-		// switch to third person, such as Immersive Equipping Animations when
-		// something equips the lobby's player at startup, would show that player
-		// from behind instead, so first person is put back; but not a camera
-		// at the player's head (another mod's first person), and not against a
-		// mod that keeps switching it away (they'd fight every frame).
-		void KeepFirstPerson()
-		{
-			auto* camera = RE::PlayerCamera::GetSingleton();
-			auto* player = RE::PlayerCharacter::GetSingleton();
-			if (!camera || !player || g_cameraLimiter.GaveUp() || camera->IsInFirstPerson()) {
-				return;
-			}
-			const float toHead = camera->cameraRoot ? camera->cameraRoot->world.translate.GetDistance(player->GetLookingAtLocation())
-			                                        : (std::numeric_limits<float>::max)();
-			if (!rules::ShouldForceFirstPerson(false, toHead)) {
-				return;
-			}
-			const int state = camera->currentState ? static_cast<int>(camera->currentState->id) : -1;
-			if (!g_cameraLimiter.Allow(std::chrono::steady_clock::now())) {
-				logger::warn("Lobby: another mod keeps taking the camera out of first person (camera state {}); leaving it to that mod", state);
-				return;
-			}
-			camera->ForceFirstPerson();
-			if (++g_cameraFixes == 1) {
-				logger::info("Lobby: something took the camera out of first person (camera state {}, {:.0f} units from the head); put back", state, toHead);
-			} else if (g_cameraFixes <= 5) {
-				logger::debug("Lobby: camera out of first person again (camera state {}, {:.0f} units from the head); put back", state, toHead);
-			}
-		}
-
 		// Each StartSweeps makes the sweeps already running stale, so a lobby
 		// resumed after a cancelled load has one pair, not one more each time.
 		std::uint32_t g_sweepTicket{ 0 };
@@ -1171,7 +1247,7 @@ namespace charselect::lobby
 			if (GameResetting()) {
 				return;  // the slow sweep ends the lobby
 			}
-			KeepFirstPerson();
+			HoldCamera();
 			RunAfter(kFastSweepInterval, [a_ticket]() { FastSweep(a_ticket); });
 		}
 
@@ -1548,7 +1624,7 @@ namespace charselect::lobby
 			auto* cell = a_player->GetParentCell();
 			SetState(State::kActive);
 			BlockSaving(true);
-			g_cameraFixes = 0;
+			g_cameraTakes = 0;
 			g_cameraLimiter.Reset();
 			LogPlayer("at staging");
 			HideOtherActors();
@@ -2391,6 +2467,7 @@ namespace charselect::lobby
 
 	void Teardown()
 	{
+		ReleaseCamera();
 		BlockSaving(false);
 		if (std::exchange(g_weatherForced, false)) {
 			if (auto* sky = RE::Sky::GetSingleton()) {
