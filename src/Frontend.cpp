@@ -19,10 +19,6 @@ namespace charselect::frontend
 		bool   g_viaHotkey{ false };         // this visit's lobby was asked for with the hotkey
 		bool   g_covered{ false };           // CoverMainMenu hid it for the lobby this visit
 		bool   g_startupMenu{ true };        // the main menu the game started on, until it first closes
-		// Start Game Settings is loaded: NEW on the main menu shows its new game
-		// options, so the lobby's NEW GAME goes through the visible main menu.
-		bool              g_newGameOptions{ false };
-		std::atomic<bool> g_newGameCovered{ false };  // NEW GAME from the lobby, kept behind its black screen
 		std::string g_failureMessage;        // a lobby that failed in its own game: shown at the main menu
 
 		std::optional<std::chrono::steady_clock::time_point> g_mainMenuOpenedAt;  // until the lobby shows
@@ -101,24 +97,11 @@ namespace charselect::frontend
 			if (a_action != Action::kNewGame) {
 				return;
 			}
-			// On the thread the menu's buttons run on.
+			// What the menu's own NEW button does, on the thread its button runs
+			// on: the game asks to confirm, and mods that change what NEW shows
+			// (Start Game Settings' new game options) get their turn. Straight
+			// to starting the game only if the menu has no NEW.
 			QueueUITask([]() {
-				if (g_newGameCovered) {
-					// Straight from the lobby's black screen into the new game.
-					SetVanillaVisible(false);
-					if (InvokeMainMenuCallback({ "startnewgame" })) {
-						return;
-					}
-					g_newGameCovered = false;
-					SelectMenu::Hide();
-					SetVanillaVisible(true);
-					logger::error("Frontend: no main menu callback to start a new game");
-					RE::DebugMessageBox("CharSelect: Could not start a new game. Use the main menu instead.");
-					return;
-				}
-				// What the menu's own NEW button does, so Start Game Settings shows
-				// its new game options (and the game asks to confirm). Straight to
-				// starting the game only if the menu has no NEW.
 				if (InvokeMainMenuCallback({ "new" }, true)) {
 					return;
 				}
@@ -232,10 +215,6 @@ namespace charselect::frontend
 		lobby::SetFailureHandler(OnLobbyFailure);
 		lobby::SetReadyHandler(OnLobbyReady);
 		g_raceMenu = REX::W32::GetModuleHandleW(L"skee64.dll") != nullptr;
-		g_newGameOptions = REX::W32::GetModuleHandleW(L"StartGameSettings.dll") != nullptr;
-		if (g_newGameOptions) {
-			logger::info("Frontend: Start Game Settings is loaded; NEW GAME goes through the main menu for its options");
-		}
 		if (!g_raceMenu) {
 			logger::warn("Frontend: RaceMenu (skee64.dll) isn't loaded; the lobby is off");
 		}
@@ -245,14 +224,6 @@ namespace charselect::frontend
 	{
 		g_mainMenuOpenedAt = std::chrono::steady_clock::now();
 		g_covered = WillReplace();
-		if (!g_covered && g_pending == Action::kNewGame && !g_newGameOptions) {
-			// NEW GAME from the lobby: nothing on this menu is needed.
-			logger::debug("Frontend: covering the vanilla main menu for NEW GAME");
-			g_newGameCovered = true;
-			SetVanillaVisible(false);
-			SelectMenu::ShowSplash("Loading");
-			return;
-		}
 		if (!g_covered) {
 			return;
 		}
@@ -282,10 +253,8 @@ namespace charselect::frontend
 			if (g_pending != Action::kNone) {
 				const auto action = std::exchange(g_pending, Action::kNone);
 				g_classicThisVisit = true;
-				if (!g_newGameCovered) {
-					SelectMenu::Hide();  // still black from the fade, if it survived the reset
-					SetVanillaVisible(true);
-				}
+				SelectMenu::Hide();  // still black from the fade, if it survived the reset
+				SetVanillaVisible(true);
 				if (const auto message = std::exchange(g_failureMessage, {}); !message.empty()) {
 					RE::DebugMessageBox(message.c_str());
 				}
@@ -329,9 +298,6 @@ namespace charselect::frontend
 		g_atMainMenu = false;
 		g_classicThisVisit = false;
 		g_startupMenu = false;
-		if (g_newGameCovered.exchange(false)) {
-			SelectMenu::Hide();  // the new game is starting
-		}
 	}
 
 	void EnterFromHotkey()
