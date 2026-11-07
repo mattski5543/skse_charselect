@@ -34,7 +34,7 @@ An SKSE plugin that swaps Skyrim's main menu for a lobby with the characters fro
 
 - It's fine to install or uninstall any time. The mod doesn't touch your save data.
 - Install from [Nexus Mods](https://www.nexusmods.com/skyrimspecialedition/mods/198132) with Vortex or Mod Organizer 2 and pick a location in the installer: the Bannered Mare, the Ragged Flagon, Sky Haven Temple, High Hrothgar or Sovngarde. You can change it later with `sLobbyCell`.
-- The installer also asks when to show the lobby: instead of the main menu (the default), only when you go back to the main menu from a game, or only with F7. You can change that later with `bReplaceMainMenu` and `bReplaceAtStartup`.
+- The installer also asks when to show the lobby: always (the default), only when you go back to the main menu from a game, or only with F7. You can change that later with `bReplaceMainMenu` and `bReplaceAtStartup`.
 - Load each character once so Character Select can record them. Until then they show up as a hooded stand-in (you can still play them).
 
 ## Controls

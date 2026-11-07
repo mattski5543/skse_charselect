@@ -72,7 +72,7 @@
 			<optionalFileGroups order="Explicit">
 				<group name="When to show the lobby" type="SelectExactlyOne">
 					<plugins order="Explicit">
-						<plugin name="Instead of the main menu">
+						<plugin name="Always">
 							<description>The lobby replaces Skyrim's main menu, when the game starts and whenever you go back to it.</description>
 							<conditionFlags>
 								<flag name="mainmenu">Startup</flag>
