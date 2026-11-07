@@ -90,6 +90,7 @@ Mods it's been checked with:
 | Skin distribution mods (SPID and others that hand out or build skins at startup, Exquisite NPCs) | Some characters lost their skin, or parts of it like their hands, for the session. These mods set skins up once per session and the reset emptied them. | Fixed in 0.9.3 |
 | NPCs who live in the lobby's location (Mikael and Uthgerd in the Bannered Mare, Lydia from Housecarls Pre-Thaneship) | They came back wiped: no spells, perks or keywords. Lydia lost her hair colour too, so her hair went pink and OBody crashed the game reading it. | Fixed in 0.9.7 |
 | RaceMenu, with hair from a light (ESL) plugin, e.g. KS Hairdos SMP | The hair showed up as a default one in the lobby, because RaceMenu left that part out. The mod now adds back any part of a look that RaceMenu skips. | Fixed in 0.9.10 |
+| HUD widget mods (STB Widgets, Minimal Vitals) | Their widgets showed over the lobby. The lobby now hides other mods' HUD menus, and the compass, which overlay widgets like Minimal Vitals hide along with. Widgets that check neither stay up: their authors can hide them while `CharSelectMenu` is open. | Fixed in 1.0.1 |
 
 If something looks wrong only after using the lobby, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`, ideally with `bDebugLog = 1`. The log has your characters' names and the mods involved, but leaves your Windows user name out of any paths.
 
