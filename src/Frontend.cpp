@@ -64,8 +64,9 @@ namespace charselect::frontend
 		}
 
 		// Calls the main menu callback whose name contains any of a_keywords
-		// (case-insensitive), as if its button had been pressed. UI thread.
-		bool InvokeMainMenuCallback(std::initializer_list<std::string_view> a_keywords)
+		// (case-insensitive; a_exact: is one of them), as if its button had been
+		// pressed. UI thread.
+		bool InvokeMainMenuCallback(std::initializer_list<std::string_view> a_keywords, bool a_exact = false)
 		{
 			auto menu = MainMenu();
 			if (!menu || !menu->fxDelegate || !menu->uiMovie) {
@@ -76,7 +77,8 @@ namespace charselect::frontend
 				const auto key = text::Lower(keyword);
 				for (auto& entry : menu->fxDelegate->callbacks) {
 					const std::string name = entry.first.c_str();
-					if (text::Lower(name).find(key) == std::string::npos || !entry.second.callback) {
+					const auto lower = text::Lower(name);
+					if ((a_exact ? lower != key : lower.find(key) == std::string::npos) || !entry.second.callback) {
 						continue;
 					}
 					logger::debug("Frontend: invoking main menu callback '{}' (matched '{}')", name, keyword);
@@ -95,8 +97,15 @@ namespace charselect::frontend
 			if (a_action != Action::kNewGame) {
 				return;
 			}
-			// The menu's own button handler, so on the thread its button runs on.
+			// What the menu's own NEW button does, on the thread its button runs
+			// on: the game asks to confirm, and mods that change what NEW shows
+			// (Start Game Settings' new game options) get their turn. Straight
+			// to starting the game only if the menu has no NEW.
 			QueueUITask([]() {
+				if (InvokeMainMenuCallback({ "new" }, true)) {
+					return;
+				}
+				logger::warn("Frontend: the main menu has no NEW callback; starting the new game directly");
 				if (!InvokeMainMenuCallback({ "startnewgame" })) {
 					logger::error("Frontend: no main menu callback to start a new game");
 					RE::DebugMessageBox("CharSelect: Could not start a new game. Use the main menu instead.");
