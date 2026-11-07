@@ -94,7 +94,7 @@ Mods it's been checked with:
 | RaceMenu, with hair from a light (ESL) plugin, e.g. KS Hairdos SMP | The hair showed up as a default one in the lobby, because RaceMenu left that part out. The mod now adds back any part of a look that RaceMenu skips. | Fixed in 0.9.10 |
 | HUD widget mods (STB Widgets, Minimal Vitals) | Their widgets showed over the lobby. The lobby now hides other mods' HUD menus, and the compass, which overlay widgets like Minimal Vitals hide along with. Widgets that check neither stay up: their authors can hide them while `CharSelectMenu` is open. | Fixed in 1.0.1 |
 | Immersive Equipping Animations (Force Third Person View) | The lobby showed its own starting character from behind, when something equipped it at startup. The lobby now keeps the camera in first person. | Fixed in 1.0.2 |
-| Start Game Settings | NEW GAME in the lobby skipped its new game options. It now does what the main menu's New button does, so you get the options (or, without the mod, the usual "start a new game?" question). | Fixed in 1.0.2 |
+| Start Game Settings | NEW GAME in the lobby skipped its new game options. With it installed, NEW GAME now goes through the main menu's New button, so you get them. | Fixed in 1.0.2 |
 
 If something looks wrong only after using the lobby, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`, ideally with `bDebugLog = 1`. The log has your characters' names and the mods involved, but leaves your Windows user name out of any paths.
 
