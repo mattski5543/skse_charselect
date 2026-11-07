@@ -1444,6 +1444,14 @@ namespace charselect::lobby
 					WatchCoc(a_ticket, a_generation);
 					return;
 				}
+				// Its loading screen came and went: the coc finished. coc holds up
+				// the task queue while it loads, so on a long load this check runs
+				// only as it returns, ahead of OnLoadingMenuClosed's task; staging
+				// takes over from there, with its own wait (TrySpawn).
+				if (g_loadingScreenSeen) {
+					logger::debug("Lobby: '{}' finished loading as the watchdog ran; staging takes over", g_targetCell);
+					return;
+				}
 				LogPlayer("watchdog");
 				TryFallbackOrFail(std::format("'{}' never finished loading", g_targetCell));
 			});
