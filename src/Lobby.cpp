@@ -1101,7 +1101,11 @@ namespace charselect::lobby
 			return hidden;
 		}
 
-		constexpr auto kKeepClearInterval = std::chrono::milliseconds(500);
+		// Two sweeps while the lobby is up. The fast one is for cheap checks
+		// where being late shows on screen (the camera); the slow one for the
+		// heavier ones (scanning the cell, other mods' HUD menus).
+		constexpr auto kFastSweepInterval = std::chrono::milliseconds(100);
+		constexpr auto kSlowSweepInterval = std::chrono::milliseconds(500);
 
 		// The game is going back to the main menu (MAIN MENU, or the Journal's
 		// Quit): the engine sets this before it tears the lobby's world down.
@@ -1132,7 +1136,16 @@ namespace charselect::lobby
 			}
 		}
 
-		void KeepCellClear(std::uint32_t a_generation)
+		void FastSweep(std::uint32_t a_generation)
+		{
+			if (a_generation != g_enterGeneration || g_state != State::kActive) {
+				return;
+			}
+			KeepFirstPerson();
+			RunAfter(kFastSweepInterval, [a_generation]() { FastSweep(a_generation); });
+		}
+
+		void SlowSweep(std::uint32_t a_generation)
 		{
 			if (a_generation != g_enterGeneration || g_state != State::kActive) {
 				return;
@@ -1142,9 +1155,15 @@ namespace charselect::lobby
 				return;
 			}
 			HideOtherActors();
-			KeepFirstPerson();
 			KeepOverlaysHidden();
-			RunAfter(kKeepClearInterval, [a_generation]() { KeepCellClear(a_generation); });
+			RunAfter(kSlowSweepInterval, [a_generation]() { SlowSweep(a_generation); });
+		}
+
+		// Both stop by themselves once the lobby isn't active or a new one starts.
+		void StartSweeps(std::uint32_t a_generation)
+		{
+			RunAfter(kFastSweepInterval, [a_generation]() { FastSweep(a_generation); });
+			RunAfter(kSlowSweepInterval, [a_generation]() { SlowSweep(a_generation); });
 		}
 
 		// Layouts are stored under the location the lobby was started in
@@ -1517,7 +1536,7 @@ namespace charselect::lobby
 					Reveal("reveal timeout");
 				}
 			});
-			RunAfter(kKeepClearInterval, [generation]() { KeepCellClear(generation); });
+			StartSweeps(generation);
 			RunAfter(std::chrono::seconds(5), [generation]() {
 				if (generation == g_enterGeneration && g_state == State::kActive) {
 					ReportSlots("5s after staging");
@@ -1620,7 +1639,7 @@ namespace charselect::lobby
 		}
 
 		// Back to a working lobby after a load that didn't happen: undoes what
-		// LoadFile stopped (the poses, the NPC-clearing timer, the hidden HUD).
+		// LoadFile stopped (the poses, the sweeps, the hidden HUD).
 		void ResumeLobby()
 		{
 			SetState(State::kActive);
@@ -1636,8 +1655,7 @@ namespace charselect::lobby
 			}
 			poses::Select(g_highlighted);
 			PlaceLight(g_highlighted);
-			const auto generation = g_enterGeneration;
-			RunAfter(kKeepClearInterval, [generation]() { KeepCellClear(generation); });
+			StartSweeps(g_enterGeneration);
 			// The select screen again (out of the fade to black after PLAY); after
 			// a LOAD, once the Journal closes (OnJournalClosed).
 			auto* ui = RE::UI::GetSingleton();
@@ -2339,7 +2357,7 @@ namespace charselect::lobby
 		switch (rules::OnPreLoadGame(g_state)) {
 		case rules::PreLoad::kStopLobby:
 			// LOAD on the select screen (the Journal). Into the loading state at
-			// once, as PLAY does: the NPC-clearing timer stops (it could
+			// once, as PLAY does: the sweeps stop (the slow one could
 			// otherwise disable NPCs of a save in the lobby's own cell) and so
 			// do the poses. A cancelled load comes back through ResumeLobby,
 			// like PLAY's.
