@@ -25,9 +25,15 @@ namespace charselect::lobby
 
 namespace charselect::lobby::rules
 {
-	bool ShouldDismissMessageBoxes(State a_state, bool a_revealed)
+	bool ShouldDismissMessageBoxes(State a_state, bool a_revealed, bool a_journalOpen, bool a_own)
 	{
-		return a_state == State::kEntering || (a_state == State::kActive && !a_revealed);
+		if (a_state == State::kEntering) {
+			return true;
+		}
+		if (a_state != State::kActive) {
+			return false;
+		}
+		return !a_revealed || (!a_journalOpen && !a_own);
 	}
 
 	bool CanEnter(State a_state)

@@ -193,14 +193,7 @@ namespace charselect::events
 					logger::debug("Menu: '{}' {} while the lobby is {}", menu, opening ? "opened" : "closed", lobby::StateName(lobby::GetState()));
 				}
 
-				if (menu == RE::MessageBoxMenu::MENU_NAME && opening && lobby::ShouldDismissMessageBoxes()) {
-					logger::info("Menu: closing a mod message box that opened in the lobby");
-					QueueTask([]() {
-						if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
-							queue->AddMessage(RE::MessageBoxMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
-						}
-					});
-				} else if (menu == RE::MainMenu::MENU_NAME) {
+				if (menu == RE::MainMenu::MENU_NAME) {
 					if (opening) {
 						// Here, not in a task: tasks can wait seconds at
 						// startup, with the vanilla menu on screen meanwhile.

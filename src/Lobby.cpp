@@ -16,6 +16,7 @@
 #include "core/Encoding.h"
 #include "core/FormKey.h"
 #include "core/LayoutMath.h"
+#include "core/Text.h"
 #include "core/UiRules.h"
 
 namespace charselect::lobby
@@ -210,6 +211,54 @@ namespace charselect::lobby
 			}
 		}
 
+		// The HUD plays its notifications' sounds itself ("new quest",
+		// "location discovered", level up) through its PlaySound callback, and
+		// keeps doing so with its movie hidden: mods starting quests in the
+		// lobby's new game played them over and over. Silenced while the lobby
+		// hides the HUD. UI thread only, like g_hudHidden.
+		RE::FxDelegateHandler::CallbackFn* g_hudPlaySound{ nullptr };
+		std::uint32_t                      g_hudSoundsMuted{ 0 };
+
+		void MutedHudSound(const RE::FxDelegateArgs& a_args)
+		{
+			if (!g_hudHidden) {
+				if (g_hudPlaySound) {
+					g_hudPlaySound(a_args);  // the HUD is back: never silence the real game
+				}
+				return;
+			}
+			if (++g_hudSoundsMuted <= 10) {
+				const bool named = a_args.GetArgCount() > 0 && a_args[0].IsString();
+				logger::debug("Lobby: HUD sound '{}' muted", named ? a_args[0].GetString() : "?");
+			}
+		}
+
+		void MuteHudSounds(RE::IMenu& a_hud, bool a_mute)
+		{
+			if (!a_hud.fxDelegate) {
+				return;
+			}
+			for (auto& entry : a_hud.fxDelegate->callbacks) {
+				if (text::Lower(entry.first.c_str()) != "playsound" || !entry.second.callback) {
+					continue;
+				}
+				if (a_mute && entry.second.callback != &MutedHudSound) {
+					g_hudPlaySound = entry.second.callback;
+					entry.second.callback = &MutedHudSound;
+					g_hudSoundsMuted = 0;
+				} else if (!a_mute && entry.second.callback == &MutedHudSound && g_hudPlaySound) {
+					entry.second.callback = g_hudPlaySound;
+					if (g_hudSoundsMuted > 0) {
+						logger::info("Lobby: muted {} HUD sound(s) in the lobby (quest and location notifications)", g_hudSoundsMuted);
+					}
+				}
+				return;
+			}
+			if (a_mute) {
+				logger::debug("Lobby: the HUD has no PlaySound callback; its sounds play as normal");
+			}
+		}
+
 		// The game's HUD, on the UI thread (Scaleform isn't thread-safe), where
 		// g_hudHidden is only used. Shown again only if hidden here.
 		void SetHudVisible(bool a_visible)
@@ -223,6 +272,7 @@ namespace charselect::lobby
 				if (hud && hud->uiMovie) {
 					hud->uiMovie->SetVisible(a_visible);
 					g_hudHidden = !a_visible;
+					MuteHudSounds(*hud, !a_visible);
 					logger::debug("Lobby: HUD {}", a_visible ? "shown" : "hidden");
 				}
 			});
@@ -1235,6 +1285,82 @@ namespace charselect::lobby
 			return main && main->GetRuntimeData().resetGame;
 		}
 
+		// Mods' message boxes in the lobby are taken out of the game's message
+		// box queue unanswered, before the menu shows them: the message box
+		// menu's ProcessMessage is wrapped (InstallMessageBoxFilter), and a
+		// show with only mods' boxes queued is dropped, so nothing is drawn.
+		// Closing the menu instead left them on screen for a frame or two, and
+		// queued, so they came back; Wintersun also shows its box again once
+		// it's answered. A script waiting on one stays waiting until the
+		// lobby's game ends. Which boxes: rules::ShouldDismissMessageBoxes;
+		// the lobby's own start with "CharSelect:". UI thread only (the menu's
+		// messages are processed there, and the queue's boxes are answered and
+		// removed there).
+		using BoxProcessMessage = RE::UI_MESSAGE_RESULTS (*)(RE::MessageBoxMenu*, RE::UIMessage&);
+		BoxProcessMessage g_boxProcessMessage{ nullptr };
+		bool              g_boxMovieHidden{ false };  // the menu's movie was hidden by a dropped show
+		std::uint32_t     g_modBoxesRemoved{ 0 };     // this lobby, for the log
+
+		bool IsOwnMessageBox(const RE::MessageBoxData& a_data)
+		{
+			const char* text = a_data.bodyText.c_str();
+			return text && std::string_view(text).starts_with("CharSelect:");
+		}
+
+		std::size_t RemoveModMessageBoxes()
+		{
+			if (g_state != State::kEntering && g_state != State::kActive) {
+				return 0;
+			}
+			auto*      ui = RE::UI::GetSingleton();
+			const bool journalOpen = ui && ui->IsMenuOpen(RE::JournalMenu::MENU_NAME);
+			std::vector<RE::MessageBoxData*> remove;
+			{
+				RE::BSSpinLockGuard lock(RE::MessageBoxMenu::GetQueueLock());
+				for (auto* data : RE::MessageBoxMenu::GetQueue()) {
+					if (data && rules::ShouldDismissMessageBoxes(g_state, g_revealed, journalOpen, IsOwnMessageBox(*data))) {
+						remove.push_back(data);
+					}
+				}
+			}
+			for (auto* data : remove) {
+				if (g_modBoxesRemoved++ < 5) {
+					const char* body = data->bodyText.c_str();
+					logger::debug("Lobby:   message box: '{}'", std::string_view(body ? body : "").substr(0, 80));
+				}
+				RE::MessageBoxMenu::RemoveMessageFromQueue(data);
+			}
+			if (!remove.empty()) {
+				logger::info("Lobby: removed {} mod message box(es) that opened in the lobby", remove.size());
+			}
+			return remove.size();
+		}
+
+		RE::UI_MESSAGE_RESULTS FilterBoxMessage(RE::MessageBoxMenu* a_menu, RE::UIMessage& a_message)
+		{
+			const auto type = a_message.type.get();
+			if (type == RE::UI_MESSAGE_TYPE::kShow || type == RE::UI_MESSAGE_TYPE::kReshow || type == RE::UI_MESSAGE_TYPE::kUpdate) {
+				const bool removed = RemoveModMessageBoxes() > 0;
+				const bool left = RE::MessageBoxMenu::GetCurrentMessageBoxData() != nullptr;
+				if (removed && !left) {
+					// Nothing to show: not drawn, and closed again.
+					if (a_menu && a_menu->uiMovie) {
+						a_menu->uiMovie->SetVisible(false);
+						g_boxMovieHidden = true;
+					}
+					if (auto* messages = RE::UIMessageQueue::GetSingleton()) {
+						messages->AddMessage(RE::MessageBoxMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
+					}
+					return RE::UI_MESSAGE_RESULTS::kHandled;
+				}
+				if (left && g_boxMovieHidden && a_menu && a_menu->uiMovie) {
+					a_menu->uiMovie->SetVisible(true);  // a box to show again (the Journal's, the lobby's own, a real game's)
+					g_boxMovieHidden = false;
+				}
+			}
+			return g_boxProcessMessage(a_menu, a_message);
+		}
+
 		// Each StartSweeps makes the sweeps already running stale, so a lobby
 		// resumed after a cancelled load has one pair, not one more each time.
 		std::uint32_t g_sweepTicket{ 0 };
@@ -1626,6 +1752,7 @@ namespace charselect::lobby
 			BlockSaving(true);
 			g_cameraTakes = 0;
 			g_cameraLimiter.Reset();
+			g_modBoxesRemoved = 0;
 			LogPlayer("at staging");
 			HideOtherActors();
 			ApplyTimeAndWeather();
@@ -2384,9 +2511,11 @@ namespace charselect::lobby
 		return g_highlighted;
 	}
 
-	bool ShouldDismissMessageBoxes()
+	void InstallMessageBoxFilter()
 	{
-		return rules::ShouldDismissMessageBoxes(g_state, g_revealed);
+		REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_MessageBoxMenu[0] };
+		g_boxProcessMessage = reinterpret_cast<BoxProcessMessage>(vtable.write_vfunc(0x4, &FilterBoxMessage));
+		logger::info("Lobby: message box filter installed");
 	}
 
 	void UnlinkSeats()

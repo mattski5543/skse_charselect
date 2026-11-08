@@ -114,9 +114,10 @@ namespace charselect::lobby
 	void EditCycle(std::size_t a_target, EditField a_field, int a_dir);
 	void EditResetCell();                  // back to the built-in layout for this cell
 
-	// Mod message boxes that pop up while the lobby starts are closed
-	// automatically (the lobby is a throwaway game).
-	[[nodiscard]] bool ShouldDismissMessageBoxes();
+	// Mods' message boxes that pop up in the lobby are removed before they
+	// show (the lobby is a throwaway game); see rules::ShouldDismissMessageBoxes.
+	// Call once, at DataLoaded. Outside the lobby it changes nothing.
+	void InstallMessageBoxFilter();
 
 	// The lobby's game is ending (MAIN MENU, NEW GAME, QUIT, or the Journal's
 	// Quit): nothing in the lobby acts on its world any more, and the main

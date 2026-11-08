@@ -19,23 +19,31 @@ TEST_CASE("StateName names every state", "[lobby]")
 	CHECK(StateName(static_cast<State>(99)) == "?");
 }
 
-TEST_CASE("Message boxes are closed only while the lobby starts", "[lobby]")
+TEST_CASE("Mods' message boxes are closed in the lobby, but not the ones that matter", "[lobby]")
 {
 	SECTION("behind the splash")
 	{
-		CHECK(ShouldDismissMessageBoxes(State::kEntering, false));
-		CHECK(ShouldDismissMessageBoxes(State::kEntering, true));
-		CHECK(ShouldDismissMessageBoxes(State::kActive, false));
+		CHECK(ShouldDismissMessageBoxes(State::kEntering, false, false, false));
+		CHECK(ShouldDismissMessageBoxes(State::kEntering, true, false, false));
+		CHECK(ShouldDismissMessageBoxes(State::kActive, false, false, false));
 	}
-	SECTION("never once the select screen shows: the missing-content prompt must reach the player")
+	SECTION("on the select screen: mods' pop-ups")
 	{
-		CHECK_FALSE(ShouldDismissMessageBoxes(State::kActive, true));
+		CHECK(ShouldDismissMessageBoxes(State::kActive, true, false, false));
+	}
+	SECTION("on the select screen: the Journal's (the missing-content prompt, Quit) and the lobby's own get through")
+	{
+		CHECK_FALSE(ShouldDismissMessageBoxes(State::kActive, true, true, false));
+		CHECK_FALSE(ShouldDismissMessageBoxes(State::kActive, true, false, true));
 	}
 	SECTION("never in the real game or during a load")
 	{
 		for (const bool revealed : { false, true }) {
-			CHECK_FALSE(ShouldDismissMessageBoxes(State::kIdle, revealed));
-			CHECK_FALSE(ShouldDismissMessageBoxes(State::kLoadingSave, revealed));
+			for (const bool journal : { false, true }) {
+				CHECK_FALSE(ShouldDismissMessageBoxes(State::kIdle, revealed, journal, false));
+				CHECK_FALSE(ShouldDismissMessageBoxes(State::kLoadingSave, revealed, journal, false));
+				CHECK_FALSE(ShouldDismissMessageBoxes(State::kLeaving, revealed, journal, false));
+			}
 		}
 	}
 }
@@ -125,7 +133,7 @@ TEST_CASE("PLAY followed by a cancelled prompt, then a retry", "[lobby][sequence
 	CHECK(OnPreLoadGame(state) == PreLoad::kNone);            // PLAY's own PreLoadGame changes nothing
 	REQUIRE(OnPostLoadGame(state, false) == PostLoad::kResume);
 	state = State::kActive;                                   // ResumeLobby
-	CHECK_FALSE(ShouldDismissMessageBoxes(state, true));      // the next prompt is shown
+	CHECK_FALSE(ShouldDismissMessageBoxes(State::kLoadingSave, true, false, false));  // the next PLAY's prompt is shown
 	REQUIRE(CanStartLoad(state));
 	state = State::kLoadingSave;
 	REQUIRE(OnPostLoadGame(state, true) == PostLoad::kLeave);
@@ -159,7 +167,7 @@ TEST_CASE("A lobby being left takes nothing more until the main menu", "[lobby]"
 	CHECK_FALSE(CanEnter(State::kLeaving));
 	CHECK_FALSE(CanPlay(State::kLeaving, 0, 3, true));
 	CHECK_FALSE(CanStartLoad(State::kLeaving));
-	CHECK_FALSE(ShouldDismissMessageBoxes(State::kLeaving, true));
+	CHECK_FALSE(ShouldDismissMessageBoxes(State::kLeaving, true, false, false));
 	CHECK_FALSE(ShouldShowSelectOnJournalClose(State::kLeaving, true, false, false));
 	CHECK(OnPreLoadGame(State::kLeaving) == PreLoad::kNone);
 }
@@ -272,7 +280,7 @@ TEST_CASE("A console load while the lobby starts", "[lobby][sequence]")
 	REQUIRE(OnPreLoadGame(state) == PreLoad::kAbandonEntering);
 	state = State::kIdle;  // ForgetLobby
 	CHECK(OnPostLoadGame(state, true) == PostLoad::kIgnore);
-	CHECK_FALSE(ShouldDismissMessageBoxes(state, false));
+	CHECK_FALSE(ShouldDismissMessageBoxes(state, false, false, false));
 	CHECK(CanEnter(state));
 }
 

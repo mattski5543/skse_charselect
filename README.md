@@ -97,6 +97,8 @@ Mods it's been checked with:
 | Immersive Equipping Animations (Force Third Person View) | The lobby showed its own starting character from behind, when something equipped it at startup. The lobby now keeps its camera at the character's eyes, and takes it back if a mod switches it. | Fixed in 1.0.2 |
 | Start Game Settings | NEW GAME in the lobby skipped its new game options. It now does what the main menu's New button does, so you get the options (or, without the mod, the usual "start a new game?" question). | Fixed in 1.0.2 |
 | Body In First Person | The lobby's view spun around (1.0.2 and 1.0.3), and once that was fixed it still swayed, as that mod's camera follows the head. The lobby now uses a fixed camera of its own, which camera mods leave alone. | Fixed in 1.0.4 |
+| Wintersun, and other mods with a pop-up at the start of a new game | Their pop-up (Wintersun's choose-a-god) showed over the select screen, as they only ask after a while, and closing it brought it back. The lobby now removes mods' pop-ups before they show. | Fixed in 1.0.5 |
+| Mods that start quests at the start of a new game | "New quest" and "location discovered" sounds played in the lobby, many times with some load orders. The lobby now mutes the hidden HUD's sounds. | Fixed in 1.0.5 |
 
 If something looks wrong only after using the lobby, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`, ideally with `bDebugLog = 1`. The log has your characters' names and the mods involved, but leaves your Windows user name out of any paths.
 

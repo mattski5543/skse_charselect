@@ -126,6 +126,7 @@ namespace
 			logger::info("SKSE message: {} - game data is loaded", MessageName(a_msg->type));
 			charselect::SelectMenu::Register();
 			charselect::frontend::Init();
+			charselect::lobby::InstallMessageBoxFilter();
 			charselect::events::Register();
 			LogSaveIndex();
 			break;

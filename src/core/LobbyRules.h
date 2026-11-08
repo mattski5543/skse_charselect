@@ -26,11 +26,12 @@ namespace charselect::lobby
 
 namespace charselect::lobby::rules
 {
-	// Mod message boxes are closed only while the lobby starts (behind the
-	// splash), when mods' setup pop-ups appear. Once the select screen shows,
-	// every message box reaches the player, above all the game's
-	// missing-content prompt.
-	[[nodiscard]] bool ShouldDismissMessageBoxes(State a_state, bool a_revealed);
+	// Mods' message boxes in the lobby's new game (setup pop-ups, Wintersun's
+	// choose-a-god) are removed, behind the splash and on the select screen.
+	// Kept: the Journal's (the missing-content prompt of a LOAD from it,
+	// Quit's question), the lobby's own (a_own), and any once a load is under
+	// way (PLAY's missing-content prompt).
+	[[nodiscard]] bool ShouldDismissMessageBoxes(State a_state, bool a_revealed, bool a_journalOpen, bool a_own);
 
 	// RequestEnter: only from a game with no lobby.
 	[[nodiscard]] bool CanEnter(State a_state);
