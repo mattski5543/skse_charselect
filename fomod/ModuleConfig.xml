@@ -64,6 +64,16 @@
 								<type name="Optional" />
 							</typeDescriptor>
 						</plugin>
+						<plugin name="Random">
+							<description>A different location each time the lobby opens, from the five above.</description>
+							<image path="fomod\images\Random.jpg" />
+							<conditionFlags>
+								<flag name="location">Random</flag>
+							</conditionFlags>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
 					</plugins>
 				</group>
 			</optionalFileGroups>
@@ -293,6 +303,42 @@
 				</dependencies>
 				<files>
 					<folder source="Locations\Sovngarde\Hotkey" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="Random" />
+					<flagDependency flag="mainmenu" value="Startup" />
+				</dependencies>
+				<files>
+					<folder source="Locations\Random\Startup" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="Random" />
+					<flagDependency flag="mainmenu" value="Return" />
+				</dependencies>
+				<files>
+					<folder source="Locations\Random\Return" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="Random" />
+					<flagDependency flag="mainmenu" value="Load" />
+				</dependencies>
+				<files>
+					<folder source="Locations\Random\Load" destination="" />
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="location" value="Random" />
+					<flagDependency flag="mainmenu" value="Hotkey" />
+				</dependencies>
+				<files>
+					<folder source="Locations\Random\Hotkey" destination="" />
 				</files>
 			</pattern>
 		</patterns>

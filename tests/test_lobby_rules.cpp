@@ -5,6 +5,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <optional>
+#include <vector>
+
 using namespace charselect::lobby;
 using namespace charselect::lobby::rules;
 using namespace std::chrono_literals;
@@ -295,6 +298,48 @@ TEST_CASE("bReplaceAtStartup = 0 keeps only the startup main menu", "[lobby][fro
 	ctx.replaceAtStartup = true;
 	ctx.startupMenu = true;
 	CHECK(ShouldReplaceMainMenu(ctx));  // the default replaces both
+}
+
+TEST_CASE("A random location is any of them, but not the last one again", "[lobby]")
+{
+	SECTION("one location: always it")
+	{
+		CHECK(PickLobbyCell(1, std::nullopt, 12345) == 0);
+		CHECK(PickLobbyCell(1, 0, 12345) == 0);
+		CHECK(PickLobbyCell(0, std::nullopt, 7) == 0);
+	}
+	SECTION("the first time, any of them")
+	{
+		std::vector<int> seen(5, 0);
+		for (std::uint32_t r = 0; r < 50; ++r) {
+			const auto pick = PickLobbyCell(5, std::nullopt, r);
+			REQUIRE(pick < 5);
+			++seen[pick];
+		}
+		for (const int n : seen) {
+			CHECK(n > 0);
+		}
+	}
+	SECTION("after that, every other one and never the last")
+	{
+		for (std::size_t last = 0; last < 5; ++last) {
+			std::vector<int> seen(5, 0);
+			for (std::uint32_t r = 0; r < 40; ++r) {
+				const auto pick = PickLobbyCell(5, last, r);
+				REQUIRE(pick < 5);
+				CHECK(pick != last);
+				++seen[pick];
+			}
+			for (std::size_t i = 0; i < 5; ++i) {
+				INFO("last " << last << ", location " << i);
+				CHECK((i == last) == (seen[i] == 0));
+			}
+		}
+	}
+	SECTION("a last one that's no longer in the list is ignored")
+	{
+		CHECK(PickLobbyCell(3, 7, 2) == 2);
+	}
 }
 
 TEST_CASE("The held camera goes to the eyes only for a reading that can be the eyes", "[lobby][camera]")

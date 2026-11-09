@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <optional>
 #include <string_view>
@@ -112,6 +113,10 @@ namespace charselect::lobby::rules
 	// The main menu opening becomes the select screen. (F7 opens it whatever
 	// these say.)
 	[[nodiscard]] bool ShouldReplaceMainMenu(const MainMenuContext& a_ctx);
+
+	// Which of a_count locations (sLobbyCell's list) this lobby opens in, from
+	// a random number: any of them, but not a_last again when there are others.
+	[[nodiscard]] std::size_t PickLobbyCell(std::size_t a_count, std::optional<std::size_t> a_last, std::uint32_t a_random);
 
 	// The lobby is seen through its player's eyes, with the free camera held
 	// there (camera mods leave it alone). Where the eyes are, from the

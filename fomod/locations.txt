@@ -1,4 +1,6 @@
 # The installer's location choices: <folder>=<cell editor ID>, one per line.
+# A list of cells separated by commas (no spaces) is a random pick from them
+# each time the lobby opens.
 # The packaging step (cmake/StageFomod.cmake) writes a CharSelect.ini for each,
 # once per main menu choice (mainmenu.txt), under Locations\<folder>\<choice>.
 # ModuleConfig.xml must list the same folders; the tests check both, and that
@@ -9,3 +11,4 @@ RaggedFlagon=RiftenRaggedFlagon
 SkyHavenTemple=SkyHavenTemple
 HighHrothgar=HighHrothgarEntrance
 Sovngarde=SovngardeMeadHall
+Random=WhiterunBanneredMare,RiftenRaggedFlagon,SkyHavenTemple,HighHrothgarEntrance,SovngardeMeadHall

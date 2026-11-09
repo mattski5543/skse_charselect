@@ -19,6 +19,8 @@
 #include "core/Text.h"
 #include "core/UiRules.h"
 
+#include <random>
+
 namespace charselect::lobby
 {
 	namespace
@@ -99,6 +101,24 @@ namespace charselect::lobby
 		bool              g_cameraEdited{ false };   // moved in the editor panel since the last save
 		bool              g_weatherForced{ false };  // the layout's weather is forced in the lobby game
 
+		// This lobby's location: sLobbyCell, or one of its list at random (never
+		// the last one again, when there are others).
+		std::string g_lobbyCell;
+
+		const std::string& PickLobbyCell()
+		{
+			const auto                 cells = config::LobbyCells(config::Get());
+			std::optional<std::size_t> last;
+			if (const auto it = std::ranges::find(cells, g_lobbyCell); it != cells.end()) {
+				last = static_cast<std::size_t>(it - cells.begin());
+			}
+			g_lobbyCell = cells[rules::PickLobbyCell(cells.size(), last, std::random_device{}())];
+			if (cells.size() > 1) {
+				logger::info("Lobby: location picked at random from {}: {}", cells.size(), g_lobbyCell);
+			}
+			return g_lobbyCell;
+		}
+
 		// Warm light that follows the selected character. Its base form is
 		// created at runtime (no plugin needed) in the lobby's game. We never free
 		// runtime forms (slot NPC bases, this light, the poses' package); we
@@ -163,9 +183,46 @@ namespace charselect::lobby
 			logger::info("Lobby: player controls {}", a_block ? "disabled" : "enabled again");
 		}
 
+		// The lobby's player stands where the camera is, and the layout editor
+		// moves it with the camera: into the hearth (a mod that makes fire
+		// hurt burned it), or up in the air (a fall). Nothing in the lobby's
+		// game may hurt it, let alone kill it (a death ends that game and
+		// loads a save of the game's choosing), so it's in god mode while the
+		// lobby is up. Same lifecycle as the controls. Switched with the
+		// console's own tgm, checked against the game's flag before and after:
+		// CommonLib's PlayerCharacter::SetGodMode turned it on but never off.
+		// Left alone if it was on already (F7 from a game in tgm).
+		bool g_godModeSet{ false };
+
+		void ProtectPlayer(bool a_protect)
+		{
+			if (a_protect) {
+				if (g_godModeSet || RE::PlayerCharacter::IsGodMode()) {
+					return;
+				}
+				RunConsoleCommand("tgm");
+				g_godModeSet = RE::PlayerCharacter::IsGodMode();
+				if (g_godModeSet) {
+					logger::info("Lobby: the lobby's player can't be hurt (god mode)");
+				} else {
+					logger::warn("Lobby: god mode didn't turn on; the lobby's player can be hurt");
+				}
+			} else if (std::exchange(g_godModeSet, false)) {
+				if (RE::PlayerCharacter::IsGodMode()) {
+					RunConsoleCommand("tgm");
+				}
+				if (RE::PlayerCharacter::IsGodMode()) {
+					logger::error("Lobby: god mode is still on; type tgm in the console to turn it off");
+				} else {
+					logger::info("Lobby: god mode off again");
+				}
+			}
+		}
+
 		void BlockSaving(bool a_block)
 		{
 			BlockControls(a_block);
+			ProtectPlayer(a_block);
 			auto* player = RE::PlayerCharacter::GetSingleton();
 			if (!player) {
 				return;
@@ -476,8 +533,8 @@ namespace charselect::lobby
 				auto*       actor = ref->As<RE::Actor>();
 				auto*       npc = actor ? actor->GetActorBase() : nullptr;
 				const auto* body = actor ? actor->GetWornArmor(RE::BGSBipedObjectForm::BipedObjectSlot::kBody) : nullptr;
-				logger::debug("Lobby:   slot {} {:08X}: pos ({:.0f}, {:.0f}, {:.0f}) off-target {:.0f} dist-to-camera {:.0f} disabled={} 3D={} AI={} ready={}",
-					i + 1, ref->GetFormID(), pos.x, pos.y, pos.z, pos.GetDistance(slot.pos),
+				logger::debug("Lobby:   slot {} {:08X}: pos ({:.0f}, {:.0f}, {:.0f}) off-target {:.0f} heading {:.2f} (spot {:.2f}) dist-to-camera {:.0f} disabled={} 3D={} AI={} ready={}",
+					i + 1, ref->GetFormID(), pos.x, pos.y, pos.z, pos.GetDistance(slot.pos), ref->GetAngleZ(), slot.heading,
 					player ? pos.GetDistance(player->GetPosition()) : -1.0f, ref->IsDisabled(), ref->Is3DLoaded(),
 					actor && actor->IsAIEnabled(), slot.view.ready);
 				logger::debug("Lobby:     race {:08X} faceNPC {:08X} headParts {} weight {:.0f} body armor '{}'",
@@ -706,7 +763,7 @@ namespace charselect::lobby
 				return;
 			}
 			a_actor->SetPosition(a_slot.pos, true);
-			a_actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, a_slot.heading });
+			TurnActor(a_actor, a_slot.heading);
 		}
 
 		// The lobby is seen through its player's eyes, with the free camera
@@ -933,7 +990,7 @@ namespace charselect::lobby
 			if (g_triedFallback) {
 				RE::DebugMessageBox(std::format("CharSelect: The location set in CharSelect.ini (sLobbyCell = {}) couldn't be loaded, so another one "
 												"is shown. Check its spelling, and that the mod it comes from is installed.",
-					config::Get().lobbyCell)
+					g_lobbyCell)
 										.c_str());
 			}
 		}
@@ -2071,7 +2128,7 @@ namespace charselect::lobby
 		poses::Reset(true);
 
 		SetState(State::kEntering);
-		IssueCoc(config::Get().lobbyCell);
+		IssueCoc(PickLobbyCell());
 	}
 
 	void OnLoadingMenuClosed()
@@ -2236,7 +2293,7 @@ namespace charselect::lobby
 					slot.furniture = PlaceFurniture(slot, furnitureBase);
 					if (actor) {
 						actor->SetPosition(slot.pos, true);
-						actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, slot.heading });
+						TurnActor(actor, slot.heading);
 					}
 					const auto token = ++slot.reseat;
 					const auto generation = g_enterGeneration.load();
@@ -2324,7 +2381,7 @@ namespace charselect::lobby
 				logger::debug("Lobby: slot {} leaves its seat for ({:.0f}, {:.0f}, {:.0f})", a_index + 1, slot.pos.x, slot.pos.y, slot.pos.z);
 				actor->StopInteractingQuick(false);
 				actor->SetPosition(slot.pos, true);
-				actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, slot.heading });
+				TurnActor(actor, slot.heading);
 				const auto token = ++slot.reseat;
 				const auto generation = g_enterGeneration.load();
 				RunAfter(kReseatDelay, [generation, a_index, token]() {

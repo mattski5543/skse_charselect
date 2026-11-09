@@ -22,6 +22,14 @@ sLobbyCell = SkyHavenTemple
 
 Start the game. If the location can't be loaded, the mod uses `sFallbackCell` instead (the developer test cell, `qasmoke`), tells you so, and the log says why.
 
+Want a change of scene? List several locations, separated by commas, and the lobby picks a different one at random each time it opens:
+
+```ini
+sLobbyCell = SkyHavenTemple, WhiterunBanneredMare, MyOwnLocation
+```
+
+The installer's **Random** choice does this with the five built-in locations.
+
 ## 3. Set it up with the layout editor
 
 The first time you go to a location without a layout, the camera starts wherever the game puts you (often a doorway) and your characters line up in front of it. Press **F8** to open the layout editor:

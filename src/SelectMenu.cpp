@@ -925,8 +925,13 @@ namespace charselect
 				a_ui.Text(hero, "info", 2, cx - 320, 600, 640, 22,
 					std::format("Level {} {}{}{}{}{}", sl.level, sl.race, kDot, sl.location, kDot, charselect::ui::FriendlyDate(sl.lastPlayed)), 13, kText, "center");
 				if (sl.placeholder) {
-					a_ui.Text(hero, "note", 3, cx - 320, 520, 640, 22,
-						"Appearance not saved yet. Load this character once to update it.", 12, kDim, "center");
+					// Over the scene, above the name: on a soft dark band, as a
+					// bright background (the Bannered Mare's hearth) washed it out.
+					auto note = a_ui.Clip(a_root, "note", depth++);
+					a_ui.Gradient(note, cx - 280, 516, 560, 28, kBlack, { { 0.0, 0.0 }, { 70.0, 60.0 }, { 70.0, 195.0 }, { 0.0, 255.0 } }, false);
+					a_ui.Text(note, "text", 1, cx - 320, 519, 640, 22, "Appearance not saved yet. Load this character once to update it.", 13, kText,
+						"center");
+					a_ui.Shadow(note);
 				}
 
 				// ENTER (loads their latest save): large spaced capitals between two fading rules; glows on hover.

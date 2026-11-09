@@ -21,7 +21,7 @@ namespace charselect::config
 		bool          debugLog{ false };        // detailed CharSelect.log for reporting a problem
 
 		// [Lobby]
-		std::string lobbyCell{ "WhiterunBanneredMare" };
+		std::string lobbyCell{ "WhiterunBanneredMare" };  // one cell, or several separated by commas (see LobbyCells)
 		std::string fallbackCell{ "qasmoke" };
 		std::size_t maxCharacters{ 5 };
 		// Worn by the hooded figure standing in for a character whose look
@@ -41,4 +41,9 @@ namespace charselect::config
 	// Applies the INI's keys on top of a_settings. Sections and keys are
 	// case-insensitive; ';' and '#' start a comment anywhere on a line.
 	void Parse(std::istream& a_in, Settings& a_settings, ParseLog& a_log);
+
+	// sLobbyCell as a list: one cell, or several separated by commas, of
+	// which the lobby picks one at random each time it opens. Never empty:
+	// the default location if the setting names none.
+	[[nodiscard]] std::vector<std::string> LobbyCells(const Settings& a_settings);
 }

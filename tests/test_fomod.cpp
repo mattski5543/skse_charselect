@@ -86,7 +86,12 @@ TEST_CASE("The installer offers every location, each with a layout", "[fomod][sh
 		INFO(folder << " = " << cell);
 		CHECK(Count(config, "<flag name=\"location\">" + folder + "</flag>") == 1);
 		CHECK(Count(config, "<image path=\"fomod\\images\\" + folder + ".jpg\" />") == 1);
-		CHECK(Count(layouts, "\n[" + Lower(cell) + "]") == 1);
+		// One cell, or a random pick from several (separated by commas).
+		std::istringstream cells(cell);
+		for (std::string one; std::getline(cells, one, ',');) {
+			INFO(one);
+			CHECK(Count(layouts, "\n[" + Lower(one) + "]") == 1);
+		}
 	}
 }
 

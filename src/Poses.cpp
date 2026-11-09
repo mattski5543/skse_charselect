@@ -291,7 +291,7 @@ namespace charselect::poses
 				SetTopPackage(actor->GetActorBase(), DoNothingPackage());
 				actor->EvaluatePackage(true, true);
 				actor->SetPosition(p->home, true);
-				actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, p->heading });
+				TurnActor(actor, p->heading);
 				LookAtCamera(actor);
 				return;
 			}
@@ -448,7 +448,7 @@ namespace charselect::poses
 				if (std::sqrt(dx * dx + dy * dy) > kDriftLimit) {
 					logger::warn("Poses: slot {} drifted to ({:.0f}, {:.0f}, {:.0f}), putting it back ({})", i + 1, pos.x, pos.y, pos.z, Describe(actor));
 					actor->SetPosition(p.home, true);
-					actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, p.heading });
+					TurnActor(actor, p.heading);
 					SetTopPackage(actor->GetActorBase(), DoNothingPackage());
 					actor->EvaluatePackage(true, false);
 				}

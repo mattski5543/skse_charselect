@@ -7,6 +7,8 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <sstream>
+#include <string>
+#include <vector>
 
 using namespace charselect::config;
 using Catch::Matchers::ContainsSubstring;
@@ -101,6 +103,17 @@ TEST_CASE("Sections and keys ignore case and spacing", "[config]")
 TEST_CASE("Values keep their own case", "[config]")
 {
 	CHECK(ParseText("[Lobby]\nsLobbyCell = MyCell\n").lobbyCell == "MyCell");
+}
+
+TEST_CASE("sLobbyCell can list several locations, one picked each time", "[config]")
+{
+	using V = std::vector<std::string>;
+	CHECK(LobbyCells(Settings{}) == V{ "WhiterunBanneredMare" });
+	CHECK(LobbyCells(ParseText("[Lobby]\nsLobbyCell = MyCell\n")) == V{ "MyCell" });
+	CHECK(LobbyCells(ParseText("[Lobby]\nsLobbyCell = A, B ,,C,\n")) == V{ "A", "B", "C" });
+	CHECK(LobbyCells(ParseText("[Lobby]\nsLobbyCell = WhiterunBanneredMare,RiftenRaggedFlagon\n")) == V{ "WhiterunBanneredMare", "RiftenRaggedFlagon" });
+	// Nothing usable: the default location, never an empty list.
+	CHECK(LobbyCells(ParseText("[Lobby]\nsLobbyCell = ,\n")) == V{ "WhiterunBanneredMare" });
 }
 
 TEST_CASE("Booleans", "[config]")

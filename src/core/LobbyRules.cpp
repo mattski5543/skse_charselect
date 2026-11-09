@@ -113,6 +113,18 @@ namespace charselect::lobby::rules
 
 namespace charselect::lobby::rules
 {
+	std::size_t PickLobbyCell(std::size_t a_count, std::optional<std::size_t> a_last, std::uint32_t a_random)
+	{
+		if (a_count <= 1) {
+			return 0;
+		}
+		if (!a_last || *a_last >= a_count) {
+			return a_random % a_count;
+		}
+		const auto pick = a_random % (a_count - 1);  // among the others
+		return pick >= *a_last ? pick + 1 : pick;
+	}
+
 	bool LooksLikeEyes(float a_sideways, float a_up)
 	{
 		// From a child's eyes to a giant race's.

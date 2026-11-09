@@ -20,6 +20,23 @@ namespace charselect::config
 		}
 	}
 
+	namespace
+	{
+		// "a, b,,c" -> a, b, c
+		std::vector<std::string> SplitList(std::string_view a_value)
+		{
+			std::vector<std::string> out;
+			while (!a_value.empty()) {
+				const auto comma = a_value.find(',');
+				if (auto item = text::Trim(a_value.substr(0, comma)); !item.empty()) {
+					out.push_back(std::move(item));
+				}
+				a_value = comma == std::string_view::npos ? std::string_view{} : a_value.substr(comma + 1);
+			}
+			return out;
+		}
+	}
+
 	void Parse(std::istream& a_in, Settings& a_settings, ParseLog& a_log)
 	{
 		std::string section;
@@ -69,15 +86,7 @@ namespace charselect::config
 				} else if (id == "lobby.imaxcharacters") {
 					a_settings.maxCharacters = static_cast<std::size_t>(std::clamp(std::stol(value), 1L, 9L));  // stoul would wrap a negative
 				} else if (id == "lobby.sstandinoutfit") {
-					a_settings.standInOutfit.clear();
-					std::string_view rest = value;
-					while (!rest.empty()) {
-						const auto comma = rest.find(',');
-						if (auto item = text::Trim(rest.substr(0, comma)); !item.empty()) {
-							a_settings.standInOutfit.push_back(std::move(item));
-						}
-						rest = comma == std::string_view::npos ? std::string_view{} : rest.substr(comma + 1);
-					}
+					a_settings.standInOutfit = SplitList(value);
 				} else {
 					a_log.warnings.push_back(std::format("Config: unknown key [{}] {}", section, key));
 				}
@@ -85,5 +94,14 @@ namespace charselect::config
 				a_log.warnings.push_back(std::format("Config: bad value for [{}] {} = '{}': {}", section, key, value, e.what()));
 			}
 		}
+	}
+
+	std::vector<std::string> LobbyCells(const Settings& a_settings)
+	{
+		auto cells = SplitList(a_settings.lobbyCell);
+		if (cells.empty()) {
+			cells.push_back(Settings{}.lobbyCell);
+		}
+		return cells;
 	}
 }

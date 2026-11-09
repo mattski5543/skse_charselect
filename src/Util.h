@@ -23,6 +23,18 @@ namespace charselect
 		}
 	}
 
+	// Turns a character to face a_heading (radians). SetAngle alone moves the
+	// reference, not the character's movement controller, which can then turn
+	// it back the way it faced before once its AI runs: lobby characters are
+	// created facing the player's way, which is away from the camera.
+	inline void TurnActor(RE::Actor* a_actor, float a_heading)
+	{
+		a_actor->SetAngle(RE::NiPoint3{ 0.0f, 0.0f, a_heading });
+		if (a_actor->Is3DLoaded()) {
+			a_actor->SetHeading(a_heading);  // without 3D there's no controller yet: it starts from the angle
+		}
+	}
+
 	// One lock for everything that touches CharSelect's game state (the
 	// lobby's slots and performers, ResetGuard's capture, the frontend's
 	// flags). SKSE messages and menu events arrive on the game's main thread
