@@ -127,6 +127,7 @@ namespace
 			charselect::SelectMenu::Register();
 			charselect::frontend::Init();
 			charselect::lobby::InstallMessageBoxFilter();
+			charselect::lobby::InstallCameraHook();
 			charselect::events::Register();
 			LogSaveIndex();
 			break;

@@ -132,20 +132,4 @@ namespace charselect::lobby::rules
 		constexpr float kHighest = 250.0f;
 		return a_sideways <= kAtHeadDistance && a_up >= kLowest && a_up <= kHighest;
 	}
-
-	bool CameraFixLimiter::Allow(Clock::time_point a_now)
-	{
-		if (_gaveUp) {
-			return false;
-		}
-		while (!_recent.empty() && a_now - _recent.front() > kWindow) {
-			_recent.pop_front();
-		}
-		if (static_cast<int>(_recent.size()) >= kMaxFixes) {
-			_gaveUp = true;
-			return false;
-		}
-		_recent.push_back(a_now);
-		return true;
-	}
 }

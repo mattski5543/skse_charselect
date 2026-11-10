@@ -342,7 +342,7 @@ TEST_CASE("A random location is any of them, but not the last one again", "[lobb
 	}
 }
 
-TEST_CASE("The held camera goes to the eyes only for a reading that can be the eyes", "[lobby][camera]")
+TEST_CASE("The lobby's view goes to the eyes only for a reading that can be the eyes", "[lobby][camera]")
 {
 	CHECK(LooksLikeEyes(0.0f, kDefaultEyeHeight));
 	CHECK(LooksLikeEyes(10.0f, 125.0f));               // the first-person camera, a little forward
@@ -350,29 +350,4 @@ TEST_CASE("The held camera goes to the eyes only for a reading that can be the e
 	CHECK_FALSE(LooksLikeEyes(200.0f, 125.0f));        // a third-person camera behind the player
 	CHECK_FALSE(LooksLikeEyes(0.0f, 0.0f));            // the 3D not in place: the feet
 	CHECK_FALSE(LooksLikeEyes(0.0f, 1000.0f));
-}
-
-TEST_CASE("Taking the camera back stops when another mod keeps switching it away", "[lobby][camera]")
-{
-	using Clock = CameraFixLimiter::Clock;
-	const auto t0 = Clock::time_point{} + 1h;
-	CameraFixLimiter limiter;
-	SECTION("now and then is fine")
-	{
-		for (int i = 0; i < 20; ++i) {
-			CHECK(limiter.Allow(t0 + i * 4s));
-		}
-		CHECK_FALSE(limiter.GaveUp());
-	}
-	SECTION("over five in three seconds gives up for good")
-	{
-		for (int i = 0; i < CameraFixLimiter::kMaxFixes; ++i) {
-			CHECK(limiter.Allow(t0 + i * 100ms));
-		}
-		CHECK_FALSE(limiter.Allow(t0 + 600ms));
-		CHECK(limiter.GaveUp());
-		CHECK_FALSE(limiter.Allow(t0 + 1h));
-		limiter.Reset();
-		CHECK(limiter.Allow(t0 + 1h));
-	}
 }

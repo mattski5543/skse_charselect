@@ -7,7 +7,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <optional>
 #include <string_view>
 
@@ -118,31 +117,11 @@ namespace charselect::lobby::rules
 	// a random number: any of them, but not a_last again when there are others.
 	[[nodiscard]] std::size_t PickLobbyCell(std::size_t a_count, std::optional<std::size_t> a_last, std::uint32_t a_random);
 
-	// The lobby is seen through its player's eyes, with the free camera held
-	// there (camera mods leave it alone). Where the eyes are, from the
-	// player's feet, is read from the camera or the head once the player is
-	// in place; a reading that can't be the eyes (the 3D not ready yet) gives
-	// way to kDefaultEyeHeight straight up.
+	// The lobby is seen through its player's eyes. Where the eyes are, from
+	// the player's feet, is read from the camera or the head once the player
+	// is in place; a reading that can't be the eyes (the 3D not ready yet)
+	// gives way to kDefaultEyeHeight straight up.
 	inline constexpr float kAtHeadDistance = 60.0f;     // game units: a camera this close to the head is at the eyes
 	inline constexpr float kDefaultEyeHeight = 120.0f;  // about a Nord's
 	[[nodiscard]] bool LooksLikeEyes(float a_sideways, float a_up);
-
-	// Taking the camera back, until another mod keeps switching it away:
-	// more than kMaxFixes within kWindow, and the lobby stops fighting it.
-	class CameraFixLimiter
-	{
-	public:
-		using Clock = std::chrono::steady_clock;
-		static constexpr int  kMaxFixes = 5;
-		static constexpr auto kWindow = std::chrono::seconds(3);
-
-		// A fix about to be made: false once this has given up.
-		[[nodiscard]] bool Allow(Clock::time_point a_now);
-		[[nodiscard]] bool GaveUp() const { return _gaveUp; }
-		void               Reset() { *this = {}; }
-
-	private:
-		std::deque<Clock::time_point> _recent;
-		bool                          _gaveUp{ false };
-	};
 }

@@ -119,6 +119,11 @@ namespace charselect::lobby
 	// Call once, at DataLoaded. Outside the lobby it changes nothing.
 	void InstallMessageBoxFilter();
 
+	// The lobby's view is set on the world camera every frame while the
+	// lobby is up, whatever camera state another mod switches to. Call once,
+	// at DataLoaded. Outside the lobby it changes nothing.
+	void InstallCameraHook();
+
 	// The lobby's game is ending (MAIN MENU, NEW GAME, QUIT, or the Journal's
 	// Quit): nothing in the lobby acts on its world any more, and the main
 	// menu forgets it.

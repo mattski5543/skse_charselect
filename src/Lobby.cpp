@@ -558,6 +558,35 @@ namespace charselect::lobby
 			return out;
 		}
 
+		// The race a save's header names by editor ID ("HighElfRaceVampire").
+		RE::TESRace* FindRace(const std::string& a_editorId)
+		{
+			auto* dh = RE::TESDataHandler::GetSingleton();
+			if (!dh || a_editorId.empty()) {
+				return nullptr;
+			}
+			for (auto* race : dh->GetFormArray<RE::TESRace>()) {
+				if (race && _stricmp(race->formEditorID.c_str(), a_editorId.c_str()) == 0) {
+					return race;
+				}
+			}
+			return nullptr;
+		}
+
+		// The race's own name ("High Elf", for a vampire too), or the editor ID
+		// without its "Race" ("NordRace" -> "Nord") if it has none.
+		std::string RaceLabel(const RE::TESRace* a_race, const std::string& a_editorId)
+		{
+			if (a_race && a_race->GetName() && *a_race->GetName()) {
+				return text::ToUtf8(a_race->GetName());
+			}
+			std::string label = a_editorId;
+			if (label.ends_with("Race")) {
+				label.resize(label.size() - 4);
+			}
+			return label;
+		}
+
 		std::vector<Slot> CollectSlots()
 		{
 			std::vector<Slot> slots;
@@ -608,15 +637,7 @@ namespace charselect::lobby
 				slot.race = race;
 				slot.view.name = latest.header.playerName;
 				slot.view.level = latest.header.playerLevel;
-				if (race && race->GetName() && *race->GetName()) {
-					slot.view.race = text::ToUtf8(race->GetName());
-				} else {
-					// "NordRace" -> "Nord"
-					slot.view.race = latest.header.raceEditorId;
-					if (slot.view.race.ends_with("Race")) {
-						slot.view.race.resize(slot.view.race.size() - 4);
-					}
-				}
+				slot.view.race = RaceLabel(race ? race : FindRace(latest.header.raceEditorId), latest.header.raceEditorId);
 				slot.view.location = latest.header.playerLocation;
 				slot.view.lastPlayed = FormatFileTime(latest.header.fileTime);
 				slot.view.latestSave = text::FromUtf8(text::PathUtf8(latest.path.filename()));
@@ -766,41 +787,102 @@ namespace charselect::lobby
 			TurnActor(a_actor, a_slot.heading);
 		}
 
-		// The lobby is seen through its player's eyes, with the free camera
-		// (the console's tfc) held there rather than the first-person camera.
-		// Camera mods leave the free camera alone, so nothing moves the view
-		// by itself: Body In First Person, for one, runs a third-person camera
-		// at the head that sways with every breath, and Immersive Equipping
-		// Animations switches to third person when something equips the
-		// player. The player's body is hidden, as the camera is inside it.
-		// The fast sweep holds it there; Teardown gives the camera back.
-		bool                    g_cameraHeld{ false };  // the free camera is ours
-		RE::NiPoint3            g_eyeOffset;            // the eyes, from the player's feet
-		std::uint32_t           g_cameraTakes{ 0 };     // this lobby: times another mod took the camera
-		rules::CameraFixLimiter g_cameraLimiter;
-
-		void HidePlayerBody(bool a_hide)
+		// The lobby is seen through its player's eyes, at the layout's camera
+		// spot and aim. The game's camera is always in one of its states (first
+		// person, third person, free...), and any mod can switch it: Immersive
+		// Equipping Animations goes to third person to show the player dressing,
+		// Body In First Person sways a third-person camera with the head. So the
+		// lobby doesn't hold on to a state. It sets the world camera's view
+		// every frame, after whatever state is current has placed it
+		// (UpdateWorldCamera, wrapping the camera's UpdateWorldData), and other
+		// mods' states come and go unseen. The free camera (the console's tfc)
+		// is entered once as the quietest state, and it does the view's maths:
+		// its translation and rotation are the lobby's view. The player's body
+		// is hidden throughout, as the camera is inside it.
+		struct CameraView
 		{
-			auto* player = RE::PlayerCharacter::GetSingleton();
-			auto* body = player ? player->Get3D(false) : nullptr;
-			if (body && body->GetAppCulled() != a_hide) {
-				body->SetAppCulled(a_hide);
+			RE::NiPoint3 eyes;
+			float        pitch{ 0.0f };
+			float        yaw{ 0.0f };
+		};
+		std::mutex                                 g_viewLock;
+		CameraView                                 g_cameraView;  // under g_viewLock
+		std::vector<RE::NiPointer<RE::NiAVObject>> g_culled;      // under g_viewLock: the player's 3D the lobby hid
+		bool                                       g_viewMissed{ false };
+		std::atomic<bool>                          g_viewOwned{ false };  // UpdateWorldCamera sets the view
+		std::atomic<std::uint32_t>                 g_viewFrames{ 0 };     // frames it set, this lobby
+		RE::NiPoint3                               g_eyeOffset;           // the eyes, from the player's feet
+
+		using CameraUpdate = void (*)(RE::NiCamera*, RE::NiUpdateData*);
+		CameraUpdate g_cameraUpdate{ nullptr };
+
+		RE::FreeCameraState* FreeState(RE::PlayerCamera& a_camera)
+		{
+			return static_cast<RE::FreeCameraState*>(a_camera.GetRuntimeData().cameraStates[RE::CameraState::kFree].get());
+		}
+
+		// Under g_viewLock. The game shows and hides the player's first- and
+		// third-person 3D as camera states change; the lobby keeps both hidden.
+		void HidePlayer3D(RE::PlayerCharacter& a_player)
+		{
+			for (const bool firstPerson : { false, true }) {
+				auto* obj = a_player.Get3D(firstPerson);
+				if (!obj || obj->GetAppCulled()) {
+					continue;
+				}
+				obj->SetAppCulled(true);
+				if (std::ranges::none_of(g_culled, [obj](const auto& a_hidden) { return a_hidden.get() == obj; })) {
+					g_culled.emplace_back(obj);
+				}
 			}
 		}
 
-		void AimHeldCamera(RE::PlayerCamera& a_camera)
+		void SetView(RE::NiCamera& a_camera)
 		{
-			auto* state = a_camera.currentState.get();
-			if (!state || state->id != RE::CameraState::kFree) {
+			auto* camera = RE::PlayerCamera::GetSingleton();
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			auto* root = camera ? camera->cameraRoot.get() : nullptr;
+			auto* free = camera ? FreeState(*camera) : nullptr;
+			if (!root || !free || !player || a_camera.parent != root) {
+				if (!std::exchange(g_viewMissed, true)) {
+					logger::warn("Lobby: the world camera isn't where expected (root {}, free camera {}, parent is root {}); the view is the game's",
+						root != nullptr, free != nullptr, a_camera.parent == root);
+				}
 				return;
 			}
-			auto* free = static_cast<RE::FreeCameraState*>(state);
-			free->translation = g_stage.camera + g_eyeOffset;
-			free->rotation.x = g_stage.cameraPitch;
-			free->rotation.y = g_stage.cameraYaw;
-			// Its movement keys: nothing left pressed to drift it.
-			free->zUpDown = {};
+			std::scoped_lock lock(g_viewLock);
+			if (!g_viewOwned) {
+				return;  // released meanwhile
+			}
+			free->translation = g_cameraView.eyes;
+			free->rotation.x = g_cameraView.pitch;
+			free->rotation.y = g_cameraView.yaw;
+			free->zUpDown = {};  // its movement keys: nothing left pressed to drift it
 			free->verticalDirection = 0;
+			RE::NiQuaternion rotation;
+			RE::NiPoint3     translation;
+			free->GetRotation(rotation);
+			free->GetTranslation(translation);
+			RE::NiMatrix3 rotate;
+			rotation.ToRotation(rotate);
+			root->world.rotate = rotate;
+			root->world.translate = translation;
+			HidePlayer3D(*player);
+			++g_viewFrames;
+		}
+
+		void UpdateWorldCamera(RE::NiCamera* a_camera, RE::NiUpdateData* a_data)
+		{
+			if (g_viewOwned.load(std::memory_order_relaxed) && a_camera && a_camera == RE::Main::WorldRootCamera()) {
+				SetView(*a_camera);
+			}
+			g_cameraUpdate(a_camera, a_data);
+		}
+
+		void SetCameraView()
+		{
+			std::scoped_lock lock(g_viewLock);
+			g_cameraView = { g_stage.camera + g_eyeOffset, g_stage.cameraPitch, g_stage.cameraYaw };
 		}
 
 		// The first-person camera if it's at the head (PlacePlayer put it
@@ -819,55 +901,55 @@ namespace charselect::lobby
 			return offset;
 		}
 
-		void HoldCamera()
+		// Once the player is in place (PlacePlayer, a moment before): from here
+		// to ReleaseCamera the view is the lobby's.
+		void TakeCamera()
 		{
 			auto* camera = RE::PlayerCamera::GetSingleton();
 			auto* player = RE::PlayerCharacter::GetSingleton();
-			if (!camera || !player || g_cameraLimiter.GaveUp()) {
+			if (!camera || !player || g_viewOwned) {
 				return;
 			}
+			const int state = camera->currentState ? static_cast<int>(camera->currentState->id) : -1;
+			g_eyeOffset = ReadEyeOffset(*camera, *player);
+			SetCameraView();
 			if (!camera->IsInFreeCameraMode()) {
-				const int state = camera->currentState ? static_cast<int>(camera->currentState->id) : -1;
-				if (g_cameraHeld) {
-					if (!g_cameraLimiter.Allow(std::chrono::steady_clock::now())) {
-						logger::warn("Lobby: another mod keeps taking the camera (camera state {}); leaving it to that mod", state);
-						HidePlayerBody(false);
-						return;
-					}
-					if (++g_cameraTakes == 1) {
-						logger::info("Lobby: another mod took the camera (camera state {}); taken back", state);
-					} else {
-						logger::debug("Lobby: another mod took the camera again (camera state {}); taken back", state);
-					}
-				} else {
-					g_eyeOffset = ReadEyeOffset(*camera, *player);
-				}
 				camera->ToggleFreeCameraMode(false);
-				if (!camera->IsInFreeCameraMode()) {
-					// The next sweep tries again, a few times.
-					if (!g_cameraHeld && !g_cameraLimiter.Allow(std::chrono::steady_clock::now())) {
-						logger::warn("Lobby: the free camera wouldn't turn on (camera state {}); leaving the camera as it is", state);
-					}
+			}
+			g_viewMissed = false;
+			g_viewFrames = 0;
+			g_viewOwned = true;
+			logger::info("Lobby: camera set at the player's eyes ({:.0f} up, camera state {} before{})", g_eyeOffset.z, state,
+				camera->IsInFreeCameraMode() ? "" : "; the free camera didn't turn on");
+			const auto generation = g_enterGeneration.load();
+			RunAfter(std::chrono::seconds(2), [generation]() {
+				if (generation != g_enterGeneration || !g_viewOwned) {
 					return;
 				}
-				if (!std::exchange(g_cameraHeld, true)) {
-					logger::info("Lobby: camera held at the player's eyes ({:.0f} up, camera state {} before)", g_eyeOffset.z, state);
+				if (g_viewFrames == 0) {
+					logger::warn("Lobby: the camera hook hasn't set the view; it's the game's camera");
+				} else {
+					logger::debug("Lobby: the view set in {} frames so far", g_viewFrames.load());
 				}
-			}
-			AimHeldCamera(*camera);
-			HidePlayerBody(true);
+			});
 		}
 
 		void ReleaseCamera()
 		{
-			if (!std::exchange(g_cameraHeld, false)) {
+			if (!g_viewOwned.exchange(false)) {
 				return;
 			}
-			HidePlayerBody(false);
+			{
+				std::scoped_lock lock(g_viewLock);
+				for (const auto& obj : g_culled) {
+					obj->SetAppCulled(false);
+				}
+				g_culled.clear();
+			}
 			if (auto* camera = RE::PlayerCamera::GetSingleton(); camera && camera->IsInFreeCameraMode()) {
 				camera->ToggleFreeCameraMode(false);
 			}
-			logger::debug("Lobby: camera released");
+			logger::debug("Lobby: camera released after {} frames", g_viewFrames.load());
 		}
 
 		void PlacePlayer()
@@ -878,14 +960,10 @@ namespace charselect::lobby
 			}
 			player->SetPosition(g_stage.camera, true);
 			player->SetAngle(RE::NiPoint3{ g_stage.cameraPitch, 0.0f, g_stage.cameraYaw });
-			auto* camera = RE::PlayerCamera::GetSingleton();
-			if (!camera) {
-				return;
-			}
-			if (g_cameraHeld) {
-				AimHeldCamera(*camera);  // the editor moved the camera
-			} else {
-				camera->ForceFirstPerson();  // the eyes to read for HoldCamera
+			if (g_viewOwned) {
+				SetCameraView();  // the editor moved the camera
+			} else if (auto* camera = RE::PlayerCamera::GetSingleton()) {
+				camera->ForceFirstPerson();  // the eyes to read for TakeCamera
 			}
 		}
 
@@ -1328,10 +1406,10 @@ namespace charselect::lobby
 			return hidden;
 		}
 
-		// Two sweeps while the lobby is up. The fast one is for cheap checks
-		// where being late shows on screen (the camera); the slow one for the
-		// heavier ones (scanning the cell, other mods' HUD menus).
-		constexpr auto kFastSweepInterval = std::chrono::milliseconds(100);
+		// The sweep while the lobby is up: scanning the cell, other mods' HUD
+		// menus. The camera is taken a moment after the player is placed, for
+		// the first-person camera PlacePlayer asked for to be at the eyes.
+		constexpr auto kTakeCameraDelay = std::chrono::milliseconds(100);
 		constexpr auto kSlowSweepInterval = std::chrono::milliseconds(500);
 
 		// The game is going back to the main menu (MAIN MENU, or the Journal's
@@ -1418,21 +1496,9 @@ namespace charselect::lobby
 			return g_boxProcessMessage(a_menu, a_message);
 		}
 
-		// Each StartSweeps makes the sweeps already running stale, so a lobby
-		// resumed after a cancelled load has one pair, not one more each time.
+		// Each StartSweeps makes the sweep already running stale, so a lobby
+		// resumed after a cancelled load has one, not one more each time.
 		std::uint32_t g_sweepTicket{ 0 };
-
-		void FastSweep(std::uint32_t a_ticket)
-		{
-			if (a_ticket != g_sweepTicket || g_state != State::kActive) {
-				return;
-			}
-			if (GameResetting()) {
-				return;  // the slow sweep ends the lobby
-			}
-			HoldCamera();
-			RunAfter(kFastSweepInterval, [a_ticket]() { FastSweep(a_ticket); });
-		}
 
 		void SlowSweep(std::uint32_t a_ticket)
 		{
@@ -1448,11 +1514,16 @@ namespace charselect::lobby
 			RunAfter(kSlowSweepInterval, [a_ticket]() { SlowSweep(a_ticket); });
 		}
 
-		// Both stop by themselves once the lobby isn't active.
+		// The sweep stops by itself once the lobby isn't active. The camera
+		// stays the lobby's until Teardown (TakeCamera does nothing if it is).
 		void StartSweeps()
 		{
 			const auto ticket = ++g_sweepTicket;
-			RunAfter(kFastSweepInterval, [ticket]() { FastSweep(ticket); });
+			RunAfter(kTakeCameraDelay, [ticket]() {
+				if (ticket == g_sweepTicket && g_state == State::kActive && !GameResetting()) {
+					TakeCamera();
+				}
+			});
 			RunAfter(kSlowSweepInterval, [ticket]() { SlowSweep(ticket); });
 		}
 
@@ -1807,8 +1878,6 @@ namespace charselect::lobby
 			auto* cell = a_player->GetParentCell();
 			SetState(State::kActive);
 			BlockSaving(true);
-			g_cameraTakes = 0;
-			g_cameraLimiter.Reset();
 			g_modBoxesRemoved = 0;
 			LogPlayer("at staging");
 			HideOtherActors();
@@ -2573,6 +2642,15 @@ namespace charselect::lobby
 		REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_MessageBoxMenu[0] };
 		g_boxProcessMessage = reinterpret_cast<BoxProcessMessage>(vtable.write_vfunc(0x4, &FilterBoxMessage));
 		logger::info("Lobby: message box filter installed");
+	}
+
+	void InstallCameraHook()
+	{
+		// NiCamera::UpdateWorldData: where the world camera takes its place
+		// from the camera node and works out its view, every frame.
+		REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_NiCamera[0] };
+		g_cameraUpdate = reinterpret_cast<CameraUpdate>(vtable.write_vfunc(0x30, &UpdateWorldCamera));
+		logger::info("Lobby: camera hook installed");
 	}
 
 	void UnlinkSeats()
