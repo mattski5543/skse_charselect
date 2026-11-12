@@ -7,9 +7,9 @@
 // RaceMenu preset per save would add ~1 MB of files per save. The JSON records
 // which save it was captured from.
 //
-// Appearance itself lives in a RaceMenu preset (CharGen.SaveCharacter), which
-// covers face, sculpt, tints, overlays, transforms and body morphs (OBody,
-// BodySlide sliders), so any body mod works as long as it uses morphs.
+// Appearance itself lives in a RaceMenu preset (CharGen.SaveCharacterPreset),
+// which covers face, sculpt, tints, overlays, transforms and body morphs
+// (OBody, BodySlide sliders), so any body mod works as long as it uses morphs.
 
 #include "core/SidecarJson.h"
 
@@ -37,4 +37,9 @@ namespace charselect::sidecar
 	// Captures the loaded character as a save would, a moment after the load,
 	// so characters show in the lobby without saving with the mod first.
 	void OnPostLoadGame(bool a_success);
+
+	// At startup: moves CharSelect presets left in RaceMenu's Presets folder
+	// (the game closed between saving one and moving it) to where the lobby
+	// reads them, so they don't show in RaceMenu's preset list.
+	void MoveStrayPresets();
 }

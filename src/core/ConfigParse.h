@@ -19,6 +19,7 @@ namespace charselect::config
 		bool          lobbyOnLoad{ false };      // the main menu's Load button opens the select screen
 		std::uint32_t lobbyHotkey{ 0x41 };      // F7: enter the lobby from the vanilla main menu
 		bool          debugLog{ false };        // detailed CharSelect.log for reporting a problem
+		bool          keepCharacterAfterRaceMenu{ true };  // RaceMenu during play doesn't start a new character (CharacterId.h)
 
 		// [Lobby]
 		std::string lobbyCell{ "WhiterunBanneredMare" };  // one cell, or several separated by commas (see LobbyCells)

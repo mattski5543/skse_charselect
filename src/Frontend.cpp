@@ -2,6 +2,7 @@
 
 #include "Frontend.h"
 
+#include "CharacterId.h"
 #include "Config.h"
 #include "Lobby.h"
 #include "ResetGuard.h"
@@ -302,6 +303,7 @@ namespace charselect::frontend
 		resetguard::Restore("main menu", false);
 		lobby::OnMainMenuOpened();
 		sidecar::OnMainMenuOpened();
+		character::Forget();
 		if (std::exchange(g_covered, false) && WillReplace()) {
 			// Already covered: nothing from the vanilla menu is needed.
 			StartLobby();

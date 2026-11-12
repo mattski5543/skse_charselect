@@ -44,21 +44,40 @@ namespace charselect::layout
 			return path ? ReadFile(*path) : IniFile{};
 		}
 
-		void Write(const IniFile& a_file)
+		bool Write(const std::filesystem::path& a_path, const IniFile& a_file)
 		{
-			const auto path = FilePath();
-			if (!path) {
-				return;
-			}
 			// Atomically: a crash mid-write must not lose the user's layouts.
 			std::ostringstream ini;
 			WriteIni(ini, a_file);
 			std::string error;
-			if (files::WriteAtomic(*path, ini.str(), error)) {
-				logger::info("Layout: wrote {}", paths::ForLog(*path));
-			} else {
-				logger::error("Layout: could not write {}: {}", paths::ForLog(*path), error);
+			if (!files::WriteAtomic(a_path, ini.str(), error)) {
+				logger::error("Layout: could not write {}: {}", paths::ForLog(a_path), error);
+				return false;
 			}
+			logger::info("Layout: wrote {}", paths::ForLog(a_path));
+			return true;
+		}
+
+		// Reads the user's file, changes it and writes it back. A file that's
+		// there but can't be read (locked by an editor or an antivirus) is left
+		// alone: writing back what was read would replace every layout in it.
+		template <class F>
+		bool Update(F&& a_change)
+		{
+			const auto path = FilePath();
+			if (!path) {
+				logger::error("Layout: no folder for the layout file; not saved");
+				return false;
+			}
+			const auto text = files::ReadForUpdate(*path);
+			if (!text) {
+				logger::warn("Layout: could not read {}; not saved, so the layouts in it are kept", paths::ForLog(*path));
+				return false;
+			}
+			std::istringstream in(*text);
+			auto               file = ParseIni(in);
+			a_change(file);
+			return Write(*path, file);
 		}
 
 		RE::NiPoint3 ToNi(const Vec3& a_v) { return { a_v.x, a_v.y, a_v.z }; }
@@ -140,31 +159,23 @@ namespace charselect::layout
 		return owner ? FormatFormKey({ owner->localId, text::ToUtf8(owner->file->GetFilename()) }) : std::string{};
 	}
 
-	void SaveSlotSetting(std::string_view a_cell, std::size_t a_index, std::string_view a_key, std::string_view a_value)
+	bool Save(std::string_view a_cell, const Changes& a_changes)
 	{
-		auto file = Read();
-		SetSlotSetting(file, a_cell, a_index, a_key, a_value);
-		Write(file);
+		return Update([&](IniFile& a_file) {
+			if (a_changes.camera) {
+				SetCamera(a_file, a_cell, FromNi(a_changes.camera->pos), a_changes.camera->yaw, a_changes.camera->pitch);
+			}
+			for (const auto& [index, spot] : a_changes.spots) {
+				SetSlot(a_file, a_cell, index, FromNi(spot.pos), spot.heading);
+			}
+			for (const auto& [index, key, value] : a_changes.settings) {
+				SetSlotSetting(a_file, a_cell, index, key, value);
+			}
+		});
 	}
 
-	void SaveCamera(std::string_view a_cell, const RE::NiPoint3& a_pos, float a_yaw, float a_pitch)
+	bool Clear(std::string_view a_cell)
 	{
-		auto file = Read();
-		SetCamera(file, a_cell, FromNi(a_pos), a_yaw, a_pitch);
-		Write(file);
-	}
-
-	void SaveSlot(std::string_view a_cell, std::size_t a_index, const RE::NiPoint3& a_pos, float a_heading)
-	{
-		auto file = Read();
-		SetSlot(file, a_cell, a_index, FromNi(a_pos), a_heading);
-		Write(file);
-	}
-
-	void Clear(std::string_view a_cell)
-	{
-		auto file = Read();
-		ClearCell(file, a_cell);
-		Write(file);
+		return Update([&](IniFile& a_file) { ClearCell(a_file, a_cell); });
 	}
 }

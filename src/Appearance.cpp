@@ -166,6 +166,20 @@ namespace charselect::appearance
 		return out;
 	}
 
+	std::optional<std::uint32_t> SavedHairColour(std::uint32_t a_characterId)
+	{
+		const auto root = ReadPreset(a_characterId, "saved hair colour");
+		const auto actor = root ? root->find("actor") : json::const_iterator{};
+		if (!root || actor == root->end() || !actor->is_object()) {
+			return std::nullopt;
+		}
+		const auto colour = actor->find("hairColor");
+		if (colour == actor->end() || !colour->is_number_unsigned()) {
+			return std::nullopt;
+		}
+		return colour->get<std::uint32_t>() & 0xFFFFFF;
+	}
+
 	namespace
 	{
 		void LogRecordImpl(std::string_view a_who, const RE::TESNPC* a_npc)

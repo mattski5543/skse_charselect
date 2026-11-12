@@ -60,6 +60,7 @@ In `Data\SKSE\Plugins\CharSelect.ini`. Delete a line to go back to its default.
 | `bReplaceMainMenu` | `1` | `0` keeps the normal main menu. F7 there opens the lobby. |
 | `bReplaceAtStartup` | `1` | `0` keeps the normal main menu when the game starts, and shows the lobby only when you go back to the main menu from a game. |
 | `bLobbyOnLoad` | `0` | `1` makes the main menu's Load button open the lobby. |
+| `bKeepCharacterAfterRaceMenu` | `1` | Keeps your saves under the same character when you change your look with RaceMenu during play. `0` is the game's own way: a new character every time. |
 | `iLobbyHotkey` | `0x41` (F7) | The key that opens the lobby from the main menu. |
 | `bDebugLog` | `0` | `1` writes a detailed `CharSelect.log`, for reporting a problem. |
 | `sLobbyCell` | your installer choice | The lobby's location (a cell editor ID): `WhiterunBanneredMare`, `RiftenRaggedFlagon`, `SkyHavenTemple`, `HighHrothgarEntrance`, `SovngardeMeadHall`, or [your own](docs/CUSTOM_LOBBY.md). Several separated by commas: a different one at random each time the lobby opens. |
@@ -92,6 +93,8 @@ Mods it's been checked with:
 |---|---|---|
 | Skin distribution mods (SPID and others that hand out or build skins at startup, Exquisite NPCs) | Some characters lost their skin, or parts of it like their hands, for the session. These mods set skins up once per session and the reset emptied them. | Fixed in 0.9.3 |
 | NPCs who live in the lobby's location (Mikael and Uthgerd in the Bannered Mare, Lydia from Housecarls Pre-Thaneship) | They came back wiped: no spells, perks or keywords. Lydia lost her hair colour too, so her hair went pink and OBody crashed the game reading it. | Fixed in 0.9.7 |
+| RaceMenu during play | Changing your look with RaceMenu made the game start a new character, so they showed up twice, in the lobby and in the game's own Load menu. Character Select now keeps them one character (`bKeepCharacterAfterRaceMenu = 0` for the game's own way). | Fixed in 1.1.0 |
+| SMP hair (KS Hairdos SMP and others) | The hair showed in a default colour in the lobby, with only its highlights in the character's colour. Each lobby character now gets their own hair colour. | Fixed in 1.1.0 |
 | RaceMenu, with hair from a light (ESL) plugin, e.g. KS Hairdos SMP | The hair showed up as a default one in the lobby, because RaceMenu left that part out. The mod now adds back any part of a look that RaceMenu skips. | Fixed in 0.9.10 |
 | HUD widget mods (STB Widgets, Minimal Vitals) | Their widgets showed over the lobby. The lobby now hides other mods' HUD menus, and the compass, which overlay widgets like Minimal Vitals hide along with. Widgets that check neither stay up: their authors can hide them while `CharSelectMenu` is open. | Fixed in 1.0.1 |
 | Immersive Equipping Animations (Force Third Person View) | The lobby showed its own starting character putting on armor, when something equipped it at startup (again from 1.0.4). The lobby now sets its own view every frame, whatever camera a mod switches to. | Fixed in 1.0.7 |
@@ -100,13 +103,15 @@ Mods it's been checked with:
 | Camera mods (Improved Camera and others) | A camera mod could move the lobby's view, or switch to its own camera. Since 1.0.7 the lobby sets its own view every frame, after any camera mod has had its turn, so the view stays where the layout puts it. Checked with Improved Camera. | Improved in 1.0.7 |
 | Wintersun, and other mods with a pop-up at the start of a new game | Their pop-up (Wintersun's choose-a-god) showed over the select screen, as they only ask after a while, and closing it brought it back. The lobby now removes mods' pop-ups before they show. | Fixed in 1.0.5 |
 | Mods that start quests at the start of a new game | "New quest" and "location discovered" sounds played in the lobby, many times with some load orders. The lobby now mutes the hidden HUD's sounds. | Fixed in 1.0.5 |
+| Lobbies the game counts as a discovered location (High Hrothgar, Sky Haven Temple) | The "location discovered" music sometimes played as the lobby opened. The lobby now mutes the HUD before the game can play it. | Fixed in 1.1.0 |
+| ENB with a very large face texture (LoreRim and others) | Loading a save could crash or freeze the game. RaceMenu's own face texture export, which Character Select set off on every load, copies the texture in a way that isn't safe there. Character Select no longer uses it. | Fixed in 1.1.0 |
 
 If something looks wrong only after using the lobby, and not when you load the same save from the normal main menu (set `bReplaceMainMenu = 0` to check), please report it with your `CharSelect.log`, ideally with `bDebugLog = 1`. The log has your characters' names and the mods involved, but leaves your Windows user name out of any paths.
 
 ## Known limitations
 
 - **Enter doesn't show the "missing content" warning.** If you've removed mods since you last played a character, load them with the standard **Load** menu instead.
-- **A character who used RaceMenu partway through a playthrough gets a new ID**, so they can show up twice. The old one is still under **Load**.
+- **Characters split by RaceMenu before 1.1.0 still show up twice.** The old one is still under **Load**.
 - **Location overhauls can move furniture around**, so a character might stand instead of sit. Fix it with F8.
 - **More than six characters gets cramped** in the layout editor.
 - **Script errors from other mods at startup are normal.** They're setting up in the lobby's game and may complain in the Papyrus log.

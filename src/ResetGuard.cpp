@@ -4,6 +4,7 @@
 
 #include "Util.h"
 #include "core/Encoding.h"
+#include "core/FreshArray.h"
 
 #include <unordered_set>
 
@@ -480,6 +481,14 @@ namespace charselect::resetguard
 			return out;
 		}
 
+		// arrays::AppendFresh on the game's heap: the old array is left as it
+		// is (see FreshArray.h).
+		template <class E, class N>
+		void AppendFresh(E*& a_array, N& a_count, const std::vector<E>& a_add)
+		{
+			arrays::AppendFresh(a_array, a_count, a_add, [](std::size_t a_n) { return RE::calloc<E>(a_n); });
+		}
+
 		void RestoreKeywords(const Snapshot& a_s, const EmptiedSet& a_emptied, Fixes& a_fixes)
 		{
 			for (const auto& [id, st] : a_s.keywords) {
@@ -493,7 +502,7 @@ namespace charselect::resetguard
 				}
 				const auto missing = Missing(st.form->keywords, st.form->numKeywords, st.keywords);
 				if (!missing.empty()) {
-					st.form->AddKeywords(missing);
+					AppendFresh(st.form->keywords, st.form->numKeywords, missing);
 					a_fixes.Add(std::format("{} keywords", TypeName(st.owner)), std::format("{} +{}", Describe(st.owner), missing.size()));
 				}
 			}
@@ -606,9 +615,9 @@ namespace charselect::resetguard
 		}
 
 		// Spells, perks and head parts that went missing, then the rest of any
-		// record the revert emptied. An emptied record's spell and perk lists
-		// are rebuilt in fresh blocks (CommonLib's Add* helpers free the old
-		// array, which may already be freed); others are added to in place.
+		// record the revert emptied. Every list is rebuilt in a fresh block
+		// (AppendFresh), never through CommonLib's Add* helpers, which free
+		// the old array.
 		void RestoreNpcs(const Snapshot& a_s, const EmptiedSet& a_emptied, Fixes& a_fixes)
 		{
 			for (const auto& [id, st] : a_s.npcs) {
@@ -626,13 +635,13 @@ namespace charselect::resetguard
 						npc->actorEffects = d = new RE::TESSpellList::SpellData();
 					}
 					if (!spells.empty()) {
-						d->AddSpells(spells);
+						AppendFresh(d->spells, d->numSpells, spells);
 					}
 					if (!levSpells.empty()) {
-						d->AddLevSpells(levSpells);
+						AppendFresh(d->levSpells, d->numlevSpells, levSpells);
 					}
 					if (!shouts.empty()) {
-						d->AddShouts(shouts);
+						AppendFresh(d->shouts, d->numShouts, shouts);
 					}
 					a_fixes.Add("NPC spells", std::format("{} +{}", Describe(npc), spells.size() + levSpells.size() + shouts.size()));
 				}
@@ -642,13 +651,7 @@ namespace charselect::resetguard
 					npc->perkCount = 0;
 				}
 				if (const auto missing = MissingPerks(npc, st); !missing.empty()) {
-					auto* old = npc->perks;
-					auto* fresh = RE::calloc<RE::PerkRankData>(npc->perkCount + missing.size());
-					std::copy_n(npc->perks, npc->perkCount, fresh);
-					std::ranges::copy(missing, fresh + npc->perkCount);
-					npc->perks = fresh;
-					npc->perkCount += static_cast<std::uint32_t>(missing.size());
-					RE::free(old);  // null for an emptied record
+					AppendFresh(npc->perks, npc->perkCount, missing);
 					a_fixes.Add("NPC perks", std::format("{} +{}", Describe(npc), missing.size()));
 				}
 

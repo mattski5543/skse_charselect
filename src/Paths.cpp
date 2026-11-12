@@ -51,14 +51,36 @@ namespace charselect::paths
 
 	std::string PresetName(std::uint32_t a_characterId)
 	{
-		return std::format("CharSelect_{}", FormatCharacterId(a_characterId));
+		return std::format("{}{}", kPresetPrefix, FormatCharacterId(a_characterId));
+	}
+
+	namespace
+	{
+		std::filesystem::path CharGenDir()
+		{
+			// Skyrim's working directory is the game folder (MO2's VFS overlays it too).
+			return std::filesystem::current_path() / "Data" / "SKSE" / "Plugins" / "CharGen";
+		}
+	}
+
+	std::filesystem::path PresetDir()
+	{
+		return CharGenDir() / "Exported";
 	}
 
 	std::filesystem::path PresetPath(std::uint32_t a_characterId)
 	{
-		// Skyrim's working directory is the game folder (MO2's VFS overlays it too).
-		return std::filesystem::current_path() / "Data" / "SKSE" / "Plugins" / "CharGen" / "Exported" /
-		       std::format("{}.jslot", PresetName(a_characterId));
+		return PresetDir() / std::format("{}.jslot", PresetName(a_characterId));
+	}
+
+	std::filesystem::path PresetStagingDir()
+	{
+		return CharGenDir() / "Presets";
+	}
+
+	std::filesystem::path PresetStagingPath(std::uint32_t a_characterId)
+	{
+		return PresetStagingDir() / std::format("{}.jslot", PresetName(a_characterId));
 	}
 
 	std::string ForLog(const std::filesystem::path& a_path)

@@ -53,6 +53,12 @@ namespace charselect::lobby
 	void RequestEnter();  // from the main menu; with no characters, the failure handler runs
 	void OnLoadingMenuOpened();
 	void OnLoadingMenuClosed();
+	// The lobby's game is starting to run: its loading screen closed while the
+	// lobby is starting. Hides the HUD and mutes its sounds at once, from that
+	// menu event (the UI thread), before the game's next frame: the game
+	// discovers the lobby's location in its first moments, and the HUD plays
+	// the discovery music.
+	void HideHudAsGameStarts();
 	void OnPreLoadGame();
 	// Any lobby game is over once the main menu is back (e.g. after New Game
 	// or Classic Menu); forget it so saves are captured and the next lobby starts.

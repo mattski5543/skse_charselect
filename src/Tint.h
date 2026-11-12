@@ -17,7 +17,9 @@ namespace charselect::tint
 	void EnsurePlaceholder(std::uint32_t a_characterId);
 
 	// Our own export of the player's rendered face tint (skin tone, makeup,
-	// war paint) to Path(): what RaceMenu's SaveCharacter is meant to write
-	// but has been seen not to. Logs why if it can't.
+	// war paint) to Path(), under the renderer's lock. RaceMenu's own export
+	// (with CharGen.SaveCharacter) has been seen not to write it, and copies
+	// without that lock, which crashed the game with a large tint under ENB,
+	// so it isn't used. Logs why if it can't.
 	bool ExportFromPlayer(std::uint32_t a_characterId);
 }

@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.26)
 set(PROJECT_AUTHOR "portalfl0w")
 project(
 	CharSelect
-	VERSION 1.0.7
+	VERSION 1.1.0
 	LANGUAGES CXX)
 
 # Test builds keep the release version and add a beta number: "b1" makes

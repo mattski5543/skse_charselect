@@ -12,6 +12,10 @@ namespace charselect::appearance
 	// that can't be found are left out; empty if the file can't be read.
 	std::vector<RE::BGSHeadPart*> SavedHeadParts(std::uint32_t a_characterId);
 
+	// The hair colour in a character's saved look, as 0xRRGGBB; none if the
+	// look has none or can't be read.
+	std::optional<std::uint32_t> SavedHairColour(std::uint32_t a_characterId);
+
 	// Why RaceMenu's preset loading would leave a_part off a_npc ("" if it
 	// applies it): not flagged for the record's sex, or the record's race
 	// isn't in its valid-race list.

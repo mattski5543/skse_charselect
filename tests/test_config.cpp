@@ -64,6 +64,7 @@ TEST_CASE("The shipped CharSelect.ini parses cleanly and matches the built-in de
 	CHECK(s.lobbyOnLoad == d.lobbyOnLoad);
 	CHECK(s.lobbyHotkey == d.lobbyHotkey);
 	CHECK(s.debugLog == d.debugLog);
+	CHECK(s.keepCharacterAfterRaceMenu == d.keepCharacterAfterRaceMenu);
 	CHECK(s.lobbyCell == d.lobbyCell);
 	CHECK(s.fallbackCell == d.fallbackCell);
 	CHECK(s.maxCharacters == d.maxCharacters);
@@ -230,6 +231,13 @@ TEST_CASE("bReplaceAtStartup", "[config]")
 	CHECK(Settings{}.replaceAtStartup);
 	CHECK_FALSE(ParseText("[General]\nbReplaceAtStartup = 0\n").replaceAtStartup);
 	CHECK(ParseText("[General]\nbReplaceAtStartup = 1\n").replaceAtStartup);
+}
+
+TEST_CASE("bKeepCharacterAfterRaceMenu", "[config]")
+{
+	CHECK(Settings{}.keepCharacterAfterRaceMenu);
+	CHECK_FALSE(ParseText("[General]\nbKeepCharacterAfterRaceMenu = 0\n").keepCharacterAfterRaceMenu);
+	CHECK(ParseText("[General]\nbKeepCharacterAfterRaceMenu = 1\n").keepCharacterAfterRaceMenu);
 }
 
 TEST_CASE("bLobbyOnLoad", "[config]")

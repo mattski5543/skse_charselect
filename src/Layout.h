@@ -37,9 +37,37 @@ namespace charselect::layout
 	[[nodiscard]] std::string FormatRef(const RE::TESObjectREFR* a_ref);
 
 	Saved Load(std::string_view a_cell);
-	void  SaveCamera(std::string_view a_cell, const RE::NiPoint3& a_pos, float a_yaw, float a_pitch);
-	void  SaveSlot(std::string_view a_cell, std::size_t a_index, const RE::NiPoint3& a_pos, float a_heading);
-	// slot<N><a_key> = a_value, e.g. "pose", "select", "furniture".
-	void  SaveSlotSetting(std::string_view a_cell, std::size_t a_index, std::string_view a_key, std::string_view a_value);
-	void  Clear(std::string_view a_cell);
+
+	// One editor SAVE's changes to a cell's layout, written together.
+	struct Changes
+	{
+		struct Camera
+		{
+			RE::NiPoint3 pos;
+			float        yaw{ 0.0f };
+			float        pitch{ 0.0f };
+		};
+		struct Spot
+		{
+			std::size_t      index{ 0 };
+			Saved::SlotSpot  spot;
+		};
+		struct Setting  // slot<N><key> = value, e.g. "pose", "select", "furniture"
+		{
+			std::size_t index{ 0 };
+			std::string key;
+			std::string value;
+		};
+		std::optional<Camera> camera;
+		std::vector<Spot>     spots;
+		std::vector<Setting>  settings;
+
+		[[nodiscard]] bool Empty() const { return !camera && spots.empty() && settings.empty(); }
+	};
+
+	// Each reads the file once and writes it once. False if nothing was
+	// written (the file is there but can't be read, or can't be written;
+	// both logged): the file is as it was.
+	bool Save(std::string_view a_cell, const Changes& a_changes);
+	bool Clear(std::string_view a_cell);
 }

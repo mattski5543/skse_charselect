@@ -1,6 +1,7 @@
 // Plugin entry point: sets up logging, reads the settings, and passes SKSE's
 // messages (data loaded, game saved, game loaded) to the rest of the plugin.
 
+#include "CharacterId.h"
 #include "Config.h"
 #include "Events.h"
 #include "Frontend.h"
@@ -90,6 +91,7 @@ namespace
 		case M::kPreLoadGame:
 			logger::info("SKSE message: {} (save='{}')", MessageName(a_msg->type), SaveNameFrom(a_msg));
 			charselect::sidecar::OnPreLoadGame(SaveNameFrom(a_msg));
+			charselect::character::OnPreLoad(SaveNameFrom(a_msg));
 			if (charselect::lobby::GetState() != charselect::lobby::State::kIdle) {
 				charselect::resetguard::Capture("load");
 			}
@@ -98,6 +100,7 @@ namespace
 		case M::kNewGame:
 			logger::info("SKSE message: {}", MessageName(a_msg->type));
 			charselect::resetguard::Restore("new game", true);
+			charselect::character::Forget();
 			charselect::lobby::OnNewGame();
 			break;
 		case M::kSaveGame:
@@ -107,6 +110,7 @@ namespace
 				logger::warn("SKSE message: a game was saved while the lobby is {}", charselect::lobby::StateName(charselect::lobby::GetState()));
 			}
 			charselect::sidecar::OnSaveGame(SaveNameFrom(a_msg));
+			charselect::character::OnSaved(SaveNameFrom(a_msg));
 			break;
 		case M::kDeleteGame:
 			logger::info("SKSE message: {} (save='{}')", MessageName(a_msg->type), SaveNameFrom(a_msg));
@@ -119,6 +123,7 @@ namespace
 				// Before mods that redraw NPCs pick up the reverted skins.
 				charselect::resetguard::Restore(success ? "load" : "failed load", success);
 				charselect::lobby::OnPostLoadGame(success);
+				charselect::character::OnLoaded(success);
 				charselect::sidecar::OnPostLoadGame(success);  // after the lobby has gone idle
 			}
 			break;
@@ -128,7 +133,9 @@ namespace
 			charselect::frontend::Init();
 			charselect::lobby::InstallMessageBoxFilter();
 			charselect::lobby::InstallCameraHook();
+			charselect::character::InstallKeepIdHook();
 			charselect::events::Register();
+			charselect::sidecar::MoveStrayPresets();
 			LogSaveIndex();
 			break;
 		default:

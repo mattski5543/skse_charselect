@@ -59,6 +59,7 @@ namespace test
 
 	inline void WriteText(const std::filesystem::path& a_path, std::string_view a_text)
 	{
+		std::filesystem::create_directories(a_path.parent_path());
 		std::ofstream out(a_path, std::ios::binary | std::ios::trunc);
 		out.write(a_text.data(), static_cast<std::streamsize>(a_text.size()));
 	}

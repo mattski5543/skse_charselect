@@ -95,7 +95,7 @@ namespace charselect::lobby
 		bool              g_loadingWhileActive{ false };  // a loading screen opened with the select screen up
 		std::atomic<bool> g_revealed{ false };
 		bool              g_revealScheduled{ false };
-		bool              g_hudHidden{ false };  // UI thread only (SetHudVisible)
+		std::atomic<bool> g_hudHidden{ false };  // UI tasks and the loading screen's close (ApplyHudVisible), the HUD's sounds
 		bool              g_savingBlocked{ false };  // we set the player's disable-saving flag
 		std::atomic<bool> g_editorOpen{ false };  // the layout editor panel (F8) is up
 		bool              g_cameraEdited{ false };   // moved in the editor panel since the last save
@@ -268,26 +268,29 @@ namespace charselect::lobby
 			}
 		}
 
-		// The HUD plays its notifications' sounds itself ("new quest",
-		// "location discovered", level up) through its PlaySound callback, and
-		// keeps doing so with its movie hidden: mods starting quests in the
-		// lobby's new game played them over and over. Silenced while the lobby
-		// hides the HUD. UI thread only, like g_hudHidden.
+		// The HUD plays its notifications' sounds itself ("new quest", level
+		// up, and a discovered location's music, by its music type's name)
+		// through its PlaySound callback, and keeps doing so with its movie
+		// hidden: mods starting quests in the lobby's new game played them over
+		// and over. Silenced while the lobby hides the HUD, from the coc's
+		// loading screen closing. Swapped only by ApplyHudVisible.
 		RE::FxDelegateHandler::CallbackFn* g_hudPlaySound{ nullptr };
 		std::uint32_t                      g_hudSoundsMuted{ 0 };
 
 		void MutedHudSound(const RE::FxDelegateArgs& a_args)
 		{
-			if (!g_hudHidden) {
-				if (g_hudPlaySound) {
-					g_hudPlaySound(a_args);  // the HUD is back: never silence the real game
+			Guarded("HUD sound", [&]() {
+				if (!g_hudHidden) {
+					if (g_hudPlaySound) {
+						g_hudPlaySound(a_args);  // the HUD is back: never silence the real game
+					}
+					return;
 				}
-				return;
-			}
-			if (++g_hudSoundsMuted <= 10) {
-				const bool named = a_args.GetArgCount() > 0 && a_args[0].IsString();
-				logger::debug("Lobby: HUD sound '{}' muted", named ? a_args[0].GetString() : "?");
-			}
+				if (++g_hudSoundsMuted <= 10) {
+					const bool named = a_args.GetArgCount() > 0 && a_args[0].IsString();
+					logger::debug("Lobby: HUD sound '{}' muted", named ? a_args[0].GetString() : "?");
+				}
+			});
 		}
 
 		void MuteHudSounds(RE::IMenu& a_hud, bool a_mute)
@@ -316,23 +319,32 @@ namespace charselect::lobby
 			}
 		}
 
-		// The game's HUD, on the UI thread (Scaleform isn't thread-safe), where
-		// g_hudHidden is only used. Shown again only if hidden here.
+		// The game's HUD, from a UI task or the loading screen's close event
+		// (HideHudAsGameStarts), where the game's own menus are handled
+		// (Scaleform isn't thread-safe). Shown again only if hidden here.
+		void ApplyHudVisible(bool a_visible)
+		{
+			if (a_visible && !g_hudHidden) {
+				return;
+			}
+			auto* ui = RE::UI::GetSingleton();
+			auto  hud = ui ? ui->GetMenu(RE::HUDMenu::MENU_NAME) : nullptr;
+			if (!hud || !hud->uiMovie) {
+				logger::debug("Lobby: no HUD to {} yet", a_visible ? "show" : "hide");
+				return;
+			}
+			const bool changed = g_hudHidden == a_visible;
+			hud->uiMovie->SetVisible(a_visible);
+			g_hudHidden = !a_visible;
+			MuteHudSounds(*hud, !a_visible);
+			if (changed) {
+				logger::debug("Lobby: HUD {}", a_visible ? "shown" : "hidden");
+			}
+		}
+
 		void SetHudVisible(bool a_visible)
 		{
-			QueueUITask([a_visible]() {
-				if (a_visible && !g_hudHidden) {
-					return;
-				}
-				auto* ui = RE::UI::GetSingleton();
-				auto  hud = ui ? ui->GetMenu(RE::HUDMenu::MENU_NAME) : nullptr;
-				if (hud && hud->uiMovie) {
-					hud->uiMovie->SetVisible(a_visible);
-					g_hudHidden = !a_visible;
-					MuteHudSounds(*hud, !a_visible);
-					logger::debug("Lobby: HUD {}", a_visible ? "shown" : "hidden");
-				}
-			});
+			QueueUITask([a_visible]() { ApplyHudVisible(a_visible); });
 		}
 
 		// Other mods' HUD widgets, hidden with the game's HUD. Widgets drawn as
@@ -807,8 +819,10 @@ namespace charselect::lobby
 		};
 		std::mutex                                 g_viewLock;
 		CameraView                                 g_cameraView;  // under g_viewLock
-		std::vector<RE::NiPointer<RE::NiAVObject>> g_culled;      // under g_viewLock: the player's 3D the lobby hid
-		bool                                       g_viewMissed{ false };
+		// The player's 3D the lobby hid, compared only: a load or a return to
+		// the main menu frees it, and holding it would keep it alive past that.
+		std::vector<const RE::NiAVObject*>         g_culled;  // under g_viewLock
+		std::atomic<bool>                          g_viewMissed{ false };
 		std::atomic<bool>                          g_viewOwned{ false };  // UpdateWorldCamera sets the view
 		std::atomic<std::uint32_t>                 g_viewFrames{ 0 };     // frames it set, this lobby
 		RE::NiPoint3                               g_eyeOffset;           // the eyes, from the player's feet
@@ -831,8 +845,8 @@ namespace charselect::lobby
 					continue;
 				}
 				obj->SetAppCulled(true);
-				if (std::ranges::none_of(g_culled, [obj](const auto& a_hidden) { return a_hidden.get() == obj; })) {
-					g_culled.emplace_back(obj);
+				if (!std::ranges::contains(g_culled, obj)) {
+					g_culled.push_back(obj);
 				}
 			}
 		}
@@ -844,7 +858,7 @@ namespace charselect::lobby
 			auto* root = camera ? camera->cameraRoot.get() : nullptr;
 			auto* free = camera ? FreeState(*camera) : nullptr;
 			if (!root || !free || !player || a_camera.parent != root) {
-				if (!std::exchange(g_viewMissed, true)) {
+				if (!g_viewMissed.exchange(true)) {
 					logger::warn("Lobby: the world camera isn't where expected (root {}, free camera {}, parent is root {}); the view is the game's",
 						root != nullptr, free != nullptr, a_camera.parent == root);
 				}
@@ -874,7 +888,7 @@ namespace charselect::lobby
 		void UpdateWorldCamera(RE::NiCamera* a_camera, RE::NiUpdateData* a_data)
 		{
 			if (g_viewOwned.load(std::memory_order_relaxed) && a_camera && a_camera == RE::Main::WorldRootCamera()) {
-				SetView(*a_camera);
+				Guarded("Camera hook", [&]() { SetView(*a_camera); });
 			}
 			g_cameraUpdate(a_camera, a_data);
 		}
@@ -940,9 +954,16 @@ namespace charselect::lobby
 				return;
 			}
 			{
+				// Only the player's 3D as it is now, if the lobby hid it: after a
+				// return to the main menu, what it hid is gone.
 				std::scoped_lock lock(g_viewLock);
-				for (const auto& obj : g_culled) {
-					obj->SetAppCulled(false);
+				if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+					for (const bool firstPerson : { false, true }) {
+						auto* obj = player->Get3D(firstPerson);
+						if (obj && std::ranges::contains(g_culled, obj)) {
+							obj->SetAppCulled(false);
+						}
+					}
 				}
 				g_culled.clear();
 			}
@@ -1209,6 +1230,32 @@ namespace charselect::lobby
 			}
 		}
 
+		// RaceMenu gives lobby characters no hair colour record (their head
+		// data is a copy of the lobby player's, which has none). It tints the
+		// hair it builds, but a hair built again afterwards (an SMP hair's
+		// physics mesh) takes the record's colour, and without one fell back
+		// to a default: a blue-haired character showed brown hair in the
+		// lobby. Each gets a record in their saved colour, made for this
+		// lobby's game, while the actor is still disabled and before its head
+		// is built. The game's own TESNPC::SetHairColor puts it on.
+		void SetHairColour(std::size_t a_index, const Slot& a_slot)
+		{
+			auto*      npc = a_slot.npc;
+			const auto rgb = npc ? appearance::SavedHairColour(a_slot.data.characterId) : std::nullopt;
+			if (!rgb) {
+				return;
+			}
+			auto* factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::BGSColorForm>();
+			auto* colour = factory ? factory->Create() : nullptr;
+			if (!colour) {
+				logger::warn("Lobby: slot {} cannot create a hair colour record; its hair may show the default colour", a_index + 1);
+				return;
+			}
+			colour->color = RE::Color(static_cast<std::uint8_t>(*rgb >> 16), static_cast<std::uint8_t>(*rgb >> 8), static_cast<std::uint8_t>(*rgb), 0);
+			npc->SetHairColor(colour);
+			logger::debug("Lobby: slot {} hair colour #{:06X} (record {:08X})", a_index + 1, *rgb, colour->GetFormID());
+		}
+
 		void OnPresetApplied(std::uint32_t a_generation, std::size_t a_index, bool a_ok)
 		{
 			if (a_generation != g_enterGeneration || g_state != State::kActive || a_index >= g_slots.size()) {
@@ -1229,6 +1276,7 @@ namespace charselect::lobby
 			if (!slot.placeholder) {
 				appearance::LogRecord(std::format("slot {} '{}' after LoadCharacterEx", a_index + 1, slot.data.name), slot.npc);
 				AddMissingParts(a_index, slot);
+				SetHairColour(a_index, slot);
 				appearance::CheckPreset(std::format("slot {} '{}' with missing parts added", a_index + 1, slot.data.name),
 					slot.data.characterId, slot.npc);
 			}
@@ -1471,29 +1519,38 @@ namespace charselect::lobby
 			return remove.size();
 		}
 
-		RE::UI_MESSAGE_RESULTS FilterBoxMessage(RE::MessageBoxMenu* a_menu, RE::UIMessage& a_message)
+		// True if the show was dropped (only mods' boxes were queued).
+		bool DropModBoxes(RE::MessageBoxMenu* a_menu, const RE::UIMessage& a_message)
 		{
 			const auto type = a_message.type.get();
-			if (type == RE::UI_MESSAGE_TYPE::kShow || type == RE::UI_MESSAGE_TYPE::kReshow || type == RE::UI_MESSAGE_TYPE::kUpdate) {
-				const bool removed = RemoveModMessageBoxes() > 0;
-				const bool left = RE::MessageBoxMenu::GetCurrentMessageBoxData() != nullptr;
-				if (removed && !left) {
-					// Nothing to show: not drawn, and closed again.
-					if (a_menu && a_menu->uiMovie) {
-						a_menu->uiMovie->SetVisible(false);
-						g_boxMovieHidden = true;
-					}
-					if (auto* messages = RE::UIMessageQueue::GetSingleton()) {
-						messages->AddMessage(RE::MessageBoxMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
-					}
-					return RE::UI_MESSAGE_RESULTS::kHandled;
-				}
-				if (left && g_boxMovieHidden && a_menu && a_menu->uiMovie) {
-					a_menu->uiMovie->SetVisible(true);  // a box to show again (the Journal's, the lobby's own, a real game's)
-					g_boxMovieHidden = false;
-				}
+			if (type != RE::UI_MESSAGE_TYPE::kShow && type != RE::UI_MESSAGE_TYPE::kReshow && type != RE::UI_MESSAGE_TYPE::kUpdate) {
+				return false;
 			}
-			return g_boxProcessMessage(a_menu, a_message);
+			const bool removed = RemoveModMessageBoxes() > 0;
+			const bool left = RE::MessageBoxMenu::GetCurrentMessageBoxData() != nullptr;
+			if (removed && !left) {
+				// Nothing to show: not drawn, and closed again.
+				if (a_menu && a_menu->uiMovie) {
+					a_menu->uiMovie->SetVisible(false);
+					g_boxMovieHidden = true;
+				}
+				if (auto* messages = RE::UIMessageQueue::GetSingleton()) {
+					messages->AddMessage(RE::MessageBoxMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
+				}
+				return true;
+			}
+			if (left && g_boxMovieHidden && a_menu && a_menu->uiMovie) {
+				a_menu->uiMovie->SetVisible(true);  // a box to show again (the Journal's, the lobby's own, a real game's)
+				g_boxMovieHidden = false;
+			}
+			return false;
+		}
+
+		RE::UI_MESSAGE_RESULTS FilterBoxMessage(RE::MessageBoxMenu* a_menu, RE::UIMessage& a_message)
+		{
+			bool dropped = false;
+			Guarded("Message box filter", [&]() { dropped = DropModBoxes(a_menu, a_message); });
+			return dropped ? RE::UI_MESSAGE_RESULTS::kHandled : g_boxProcessMessage(a_menu, a_message);
 		}
 
 		// Each StartSweeps makes the sweep already running stale, so a lobby
@@ -1882,7 +1939,7 @@ namespace charselect::lobby
 			LogPlayer("at staging");
 			HideOtherActors();
 			ApplyTimeAndWeather();
-			SetHudVisible(false);
+			SetHudVisible(false);  // already hidden as the loading screen closed, unless the HUD wasn't there yet
 			HideOverlays();
 			g_stage.spawn = a_player->GetPosition();
 			g_stage.spawnYaw = a_player->GetAngleZ();
@@ -2008,7 +2065,7 @@ namespace charselect::lobby
 		}
 
 		// Back to a working lobby after a load that didn't happen: undoes what
-		// LoadFile stopped (the poses, the sweeps, the hidden HUD).
+		// LoadFile stopped (the poses, the sweep, the hidden HUD).
 		void ResumeLobby()
 		{
 			SetState(State::kActive);
@@ -2200,6 +2257,13 @@ namespace charselect::lobby
 		IssueCoc(PickLobbyCell());
 	}
 
+	void HideHudAsGameStarts()
+	{
+		if (g_state == State::kEntering) {
+			ApplyHudVisible(false);
+		}
+	}
+
 	void OnLoadingMenuClosed()
 	{
 		if (g_state == State::kActive) {
@@ -2384,32 +2448,48 @@ namespace charselect::lobby
 			PlaceLightSoon(a_index);
 		}
 
-		void SaveEdits()
+		// Every change in one write. If it isn't written, the changes stay
+		// pending, so a second SAVE writes them.
+		bool SaveEdits()
 		{
-			const auto cell = LayoutKey();
+			const auto       cell = LayoutKey();
+			layout::Changes changes;
 			if (g_cameraEdited) {
-				layout::SaveCamera(cell, g_stage.camera, g_stage.cameraYaw, g_stage.cameraPitch);
+				changes.camera = layout::Changes::Camera{ g_stage.camera, g_stage.cameraYaw, g_stage.cameraPitch };
+			}
+			for (std::size_t i = 0; i < g_slots.size() && i < layout::kMaxSlots; ++i) {
+				const auto& slot = g_slots[i];
+				if (slot.edited) {
+					changes.spots.push_back({ i, { slot.pos, slot.heading } });
+				}
+				for (const auto& [key, value] : { std::pair{ "pose", &slot.editedPose }, std::pair{ "select", &slot.editedSelect },
+						 std::pair{ "furniture", &slot.editedFurniture } }) {
+					if (*value) {
+						changes.settings.push_back({ i, key, **value });
+					}
+				}
+			}
+			if (!changes.Empty() && !layout::Save(cell, changes)) {
+				return false;
+			}
+			if (changes.camera) {
 				logger::info("Lobby: editor saved the camera for '{}'", cell);
 			}
-			for (std::size_t i = 0; i < g_slots.size(); ++i) {
-				auto& slot = g_slots[i];
-				if (slot.edited && i < layout::kMaxSlots) {
-					layout::SaveSlot(cell, i, slot.pos, slot.heading);
-					logger::info("Lobby: editor saved spot {} for '{}' at ({:.1f}, {:.1f}, {:.1f}) heading {:.4f}", i + 1, cell, slot.pos.x,
-						slot.pos.y, slot.pos.z, slot.heading);
-				}
-				const std::array<std::pair<const char*, std::optional<std::string>*>, 3> settings{ { { "pose", &slot.editedPose },
-					{ "select", &slot.editedSelect }, { "furniture", &slot.editedFurniture } } };
-				for (const auto& [key, value] : settings) {
-					if (*value && i < layout::kMaxSlots) {
-						layout::SaveSlotSetting(cell, i, key, **value);
-						logger::info("Lobby: editor saved slot{}{} = {} for '{}'", i + 1, key, **value, cell);
-					}
-					value->reset();
-				}
+			for (const auto& [index, spot] : changes.spots) {
+				logger::info("Lobby: editor saved spot {} for '{}' at ({:.1f}, {:.1f}, {:.1f}) heading {:.4f}", index + 1, cell, spot.pos.x, spot.pos.y,
+					spot.pos.z, spot.heading);
+			}
+			for (const auto& [index, key, value] : changes.settings) {
+				logger::info("Lobby: editor saved slot{}{} = {} for '{}'", index + 1, key, value, cell);
+			}
+			for (auto& slot : g_slots) {
 				slot.edited = false;
+				slot.editedPose.reset();
+				slot.editedSelect.reset();
+				slot.editedFurniture.reset();
 			}
 			g_cameraEdited = false;
+			return true;
 		}
 
 		void ForgetEdits()
@@ -2517,7 +2597,11 @@ namespace charselect::lobby
 			return;
 		}
 		if (a_save) {
-			SaveEdits();
+			if (!SaveEdits()) {
+				// The editor stays open with the changes, to SAVE again or cancel.
+				RE::DebugMessageBox("CharSelect: Couldn't save the layout. Your changes are still there: try SAVE again. See CharSelect.log.");
+				return;
+			}
 		} else {
 			logger::info("Lobby: editor cancelled, reverting to the saved layout");
 			ForgetEdits();
@@ -2618,7 +2702,10 @@ namespace charselect::lobby
 			return;
 		}
 		const auto cell = LayoutKey();
-		layout::Clear(cell);
+		if (!layout::Clear(cell)) {
+			RE::DebugMessageBox("CharSelect: Couldn't reset the layout. See CharSelect.log.");
+			return;
+		}
 		logger::info("Lobby: editor reset '{}' to the built-in layout", cell);
 		ForgetEdits();
 		Summon();
@@ -2755,8 +2842,8 @@ namespace charselect::lobby
 		switch (rules::OnPreLoadGame(g_state)) {
 		case rules::PreLoad::kStopLobby:
 			// LOAD on the select screen (the Journal). Into the loading state at
-			// once, as PLAY does: the sweeps stop (the slow one could
-			// otherwise disable NPCs of a save in the lobby's own cell) and so
+			// once, as PLAY does: the sweep stops (it could otherwise
+			// disable NPCs of a save in the lobby's own cell) and so
 			// do the poses. A cancelled load comes back through ResumeLobby,
 			// like PLAY's.
 			logger::info("Lobby: a save is loading from the Journal; the lobby stops");

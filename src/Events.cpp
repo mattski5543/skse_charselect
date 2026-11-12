@@ -209,6 +209,7 @@ namespace charselect::events
 						QueueTask([]() { SelectMenu::Hide(); });
 					}
 				} else if (menu == RE::LoadingMenu::MENU_NAME && !opening) {
+					lobby::HideHudAsGameStarts();  // here, not in a task: see Lobby.h
 					QueueTask([]() { lobby::OnLoadingMenuClosed(); });
 				} else if (menu == RE::RaceSexMenu::MENU_NAME && !opening) {
 					sidecar::OnRaceMenuClosed();

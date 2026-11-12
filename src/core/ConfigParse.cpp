@@ -79,6 +79,8 @@ namespace charselect::config
 					a_settings.lobbyHotkey = static_cast<std::uint32_t>(std::stoul(value, nullptr, hex ? 16 : 10));
 				} else if (id == "general.bdebuglog") {
 					a_settings.debugLog = ParseBool(value);
+				} else if (id == "general.bkeepcharacterafterracemenu") {
+					a_settings.keepCharacterAfterRaceMenu = ParseBool(value);
 				} else if (id == "lobby.slobbycell") {
 					a_settings.lobbyCell = value;
 				} else if (id == "lobby.sfallbackcell") {

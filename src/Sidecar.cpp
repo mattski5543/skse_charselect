@@ -226,6 +226,14 @@ namespace charselect::sidecar
 			return false;
 		}
 
+		// Saved with CharGen.SaveCharacterPreset, not SaveCharacter: SaveCharacter
+		// also queues RaceMenu's own tint export, which copies the face texture
+		// on the graphics card without the renderer's lock, on another thread.
+		// With a large tint mask (4096x4096) under ENB it crashed the game. The
+		// tint is exported by tint::ExportFromPlayer alone. SaveCharacterPreset
+		// writes to RaceMenu's Presets folder; the preset is moved from there
+		// to where CharGen.LoadCharacterEx reads it, replacing the previous
+		// one (which stays if the move fails).
 		void ExportPreset(ExportTracker::Ticket a_ticket)
 		{
 			const auto id = a_ticket.characterId;
@@ -233,23 +241,27 @@ namespace charselect::sidecar
 				logger::info("Sidecar: not exporting {}: the player has changed since it was asked for", FormatCharacterId(id));
 				return;
 			}
+			auto* player = RE::PlayerCharacter::GetSingleton();
+			if (!player) {
+				return;
+			}
 			const auto name = paths::PresetName(id);
 			const auto start = std::chrono::steady_clock::now();
 			const auto startedAt = std::filesystem::file_time_type::clock::now();
 			const bool thirdPerson = InThirdPerson();
-			const bool queued = papyrus::CallStatic("CharGen", "SaveCharacter",
+			const bool queued = papyrus::CallStatic("CharGen", "SaveCharacterPreset",
 				[a_ticket, id, name, start, startedAt, thirdPerson](const RE::BSScript::Variable&) {
-					const auto path = paths::PresetPath(id);
-					std::error_code ec;
-					const auto size = std::filesystem::file_size(path, ec);
-					const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-					if (ec) {
-						logger::error("Sidecar: CharGen.SaveCharacter('{}') finished but {} is missing ({})", name, paths::ForLog(path), ec.message());
+					const auto  staged = paths::PresetStagingPath(id);
+					const auto  path = paths::PresetPath(id);
+					std::string error;
+					const auto  ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+					if (files::MoveReplacing(staged, path, error)) {
+						std::error_code ec;
+						logger::info("Sidecar: preset '{}' exported ({} bytes, {:.0f} ms after queueing)", name, std::filesystem::file_size(path, ec), ms);
 					} else {
-						logger::info("Sidecar: preset '{}' exported ({} bytes, {:.0f} ms after queueing)", name, size, ms);
+						logger::error("Sidecar: CharGen.SaveCharacterPreset('{}') finished but {} could not be moved to {} ({})", name,
+							paths::ForLog(staged), paths::ForLog(path), error);
 					}
-					// RaceMenu's own tint export (a task it queues) has been seen
-					// never to write a file, so export it ourselves too.
 					QueueTask([a_ticket, name]() {
 						if (StillCurrent(a_ticket)) {
 							auto* player = RE::PlayerCharacter::GetSingleton();
@@ -262,9 +274,9 @@ namespace charselect::sidecar
 					});
 					RunAfter(std::chrono::seconds(3), [a_ticket, thirdPerson, startedAt]() { CheckTint(a_ticket, thirdPerson, startedAt); });
 				},
-				RE::BSFixedString(name));
+				static_cast<RE::Actor*>(player), RE::BSFixedString(name));
 			if (!queued) {
-				logger::error("Sidecar: could not call CharGen.SaveCharacter - is RaceMenu installed?");
+				logger::error("Sidecar: could not call CharGen.SaveCharacterPreset - is RaceMenu installed?");
 				std::scoped_lock lock(g_lock);
 				g_lastExport.erase(id);
 			}
@@ -440,5 +452,17 @@ namespace charselect::sidecar
 		std::scoped_lock lock(g_lock);
 		g_raceMenuDirty = true;
 		logger::info("Sidecar: RaceMenu closed, preset will be re-exported on next save");
+	}
+
+	void MoveStrayPresets()
+	{
+		const auto target = paths::PresetDir();
+		const auto result = files::MoveMatching(paths::PresetStagingDir(), target, paths::kPresetPrefix, ".jslot");
+		for (const auto& [file, why] : result.failed) {
+			logger::warn("Sidecar: could not move {} to {} ({})", paths::ForLog(file), paths::ForLog(target), why);
+		}
+		if (result.moved > 0) {
+			logger::info("Sidecar: moved {} CharSelect preset(s) left in RaceMenu's Presets folder to {}", result.moved, paths::ForLog(target));
+		}
 	}
 }
