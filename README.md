@@ -9,6 +9,7 @@ An SKSE plugin that swaps Skyrim's main menu for a lobby with the characters fro
 ## Features
 
 - Your latest saves become characters in the lobby, including their equipment, overlays etc.
+- Changing your look with RaceMenu during play keeps you the same character. The game would otherwise start a new character every time, so you'd show up twice (`bKeepCharacterAfterRaceMenu = 0` for the game's own way). Characters split before 1.1.0 stay split. This fix is also planned as a separate mod, for anyone who wants it without the lobby.
 - In-game editor (F8) to set the position and pose of each character, and the camera.
 - 5 pre-configured scenes to choose from. Any named cell can become a lobby once it's set up ([how](docs/CUSTOM_LOBBY.md)).
 - Characters can use furniture and play animations. They're locked in place once set up.
@@ -111,7 +112,6 @@ If something looks wrong only after using the lobby, and not when you load the s
 ## Known limitations
 
 - **Enter doesn't show the "missing content" warning.** If you've removed mods since you last played a character, load them with the standard **Load** menu instead.
-- **Characters split by RaceMenu before 1.1.0 still show up twice.** The old one is still under **Load**.
 - **Location overhauls can move furniture around**, so a character might stand instead of sit. Fix it with F8.
 - **More than six characters gets cramped** in the layout editor.
 - **Script errors from other mods at startup are normal.** They're setting up in the lobby's game and may complain in the Papyrus log.
