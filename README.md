@@ -26,7 +26,7 @@ An SKSE plugin that swaps Skyrim's main menu for a lobby with the characters fro
 
 ## Requirements
 
-- Skyrim SE or AE. Tested on 1.7.104. 1.6.1170 and 1.5.97 should work but haven't been tested yet. No VR.
+- Skyrim SE or AE. Tested on 1.7.104, and users report 1.6.x and 1.5.97 working too. No VR.
 - [SKSE](https://skse.silverlock.org/)
 - [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
 - [RaceMenu](https://www.nexusmods.com/skyrimspecialedition/mods/19080), a version that works on your game version. Tested with the beta from RaceMenu's Patreon, but the mod only uses a few of RaceMenu's functions, so other versions should work too.
@@ -115,7 +115,7 @@ If something looks wrong only after using the lobby, and not when you load the s
 - **Location overhauls can move furniture around**, so a character might stand instead of sit. Fix it with F8.
 - **More than six characters gets cramped** in the layout editor.
 - **Script errors from other mods at startup are normal.** They're setting up in the lobby's game and may complain in the Papyrus log.
-- **Not tested yet:** 1.6.1170, 1.5.97, Mod Organizer 2, other main menu mods, ultrawide screens.
+- **Not tested yet:** Mod Organizer 2, other main menu mods, ultrawide screens.
 
 ## Uninstalling
 
